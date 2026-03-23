@@ -49,8 +49,11 @@ def print_deep_dive(biz, contacts, links):
     print("  CONTACT DISCOVERY")
     print(f"  {THIN_DIVIDER}")
 
+    if contacts.get("owner_name"):
+        print(f"\n  >>> OWNER: {contacts['owner_name']} <<<")
+
     if contacts.get("owner_snippets"):
-        print("\n  Owner/Founder (from web search):")
+        print("\n  Search snippets:")
         for snippet in contacts["owner_snippets"]:
             print(f"    - {snippet}")
 
@@ -95,7 +98,7 @@ def print_deep_dive(biz, contacts, links):
 def export_csv(filepath, businesses, research_data=None):
     """Export results to CSV file."""
     fieldnames = [
-        "name", "address", "phone", "website",
+        "name", "address", "phone", "website", "owner_name",
         "owner_snippets", "emails_found", "phones_found", "names_found",
         "owner_search_link", "zoning_search_link", "property_search_link",
         "county", "county_gis_link",
@@ -117,6 +120,7 @@ def export_csv(filepath, businesses, research_data=None):
             if research_data and key in research_data:
                 contacts = research_data[key].get("contacts", {})
                 links = research_data[key].get("links", {})
+                row["owner_name"] = contacts.get("owner_name", "")
                 row["owner_snippets"] = " | ".join(contacts.get("owner_snippets", []))
                 row["emails_found"] = " | ".join(contacts.get("emails", []))
                 row["phones_found"] = " | ".join(contacts.get("phones", []))
