@@ -80,13 +80,16 @@ def print_deep_dive(biz, contacts, links, property_data=None):
         if property_data.get("property_owner"):
             print(f"\n  >>> {property_data['property_owner']} <<<")
         else:
-            print(f"\n  Not found via search")
+            print(f"\n  Not found")
 
         if property_data.get("zoning"):
-            zoning_lines = property_data["zoning"].split("\n")
-            print(f"  Zoning: {zoning_lines[0]}")
-            if len(zoning_lines) > 1:
-                print(f"  {zoning_lines[1]}")
+            print(f"  Zoning: {property_data['zoning']}")
+        if property_data.get("zoning_uses"):
+            print(f"  {property_data['zoning_uses']}")
+        if property_data.get("parcel_id"):
+            print(f"  Parcel: {property_data['parcel_id']}")
+        if property_data.get("data_source"):
+            print(f"  Source: {property_data['data_source']}")
 
         # Secondary contacts (mgmt company, leasing agent, etc.)
         sec = property_data.get("secondary_contacts", {})
@@ -138,7 +141,7 @@ def export_csv(filepath, businesses, research_data=None):
     fieldnames = [
         "name", "address", "phone", "website",
         "business_owner", "emails_found", "phones_found",
-        "property_owner", "zoning",
+        "property_owner", "zoning", "zoning_uses", "parcel_id",
         "mgmt_company", "leasing_contact", "mgmt_phone", "mgmt_email",
         "loopnet_link", "assessor_link",
         "county",
@@ -171,6 +174,8 @@ def export_csv(filepath, businesses, research_data=None):
                 row["phones_found"] = " | ".join(contacts.get("phones", []))
                 row["property_owner"] = prop.get("property_owner", "")
                 row["zoning"] = prop.get("zoning", "")
+                row["zoning_uses"] = prop.get("zoning_uses", "")
+                row["parcel_id"] = prop.get("parcel_id", "")
                 row["mgmt_company"] = sec.get("mgmt_company", "")
                 row["leasing_contact"] = sec.get("leasing_contact", "")
                 row["mgmt_phone"] = sec.get("phone", "")

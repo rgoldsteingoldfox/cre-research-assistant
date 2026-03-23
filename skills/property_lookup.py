@@ -1,4 +1,4 @@
-"""Look up property owner and zoning info via SerpAPI + Haiku."""
+"""Look up property owner and zoning info via city ArcGIS APIs + SerpAPI fallback."""
 
 import os
 import re
@@ -9,12 +9,29 @@ from utils.cache import get_cached, set_cached
 SERPAPI_URL = "https://serpapi.com/search"
 CACHE_NAME = "property"
 
+# City ArcGIS FeatureServer endpoints with layer IDs and field mappings
+# Each entry: (base_url, layer_id, {field_map})
+ARCGIS_ENDPOINTS = {
+    "Roswell": {
+        "url": "https://gisweb.ci.roswell.ga.us/arcgis/rest/services/ArcGISHub/ArcGIS_Hub_REST_Services/FeatureServer",
+        "layer": 4,
+        "fields": {
+            "address": "SITEADDRES",
+            "zoning_code": "USECD",
+            "zoning_desc": "USEDSCRP",
+            "owner": "OWNERNME1",
+            "owner2": "OWNERNME2",
+            "parcel_id": "PARCELID",
+        },
+    },
+    # More cities added as we discover their endpoints
+}
+
 
 def lookup_property(address, api_key=None):
     """
-    Search for property owner/LLC and zoning info for an address.
-    Returns dict with property_owner, zoning, property_snippets,
-    and a management_search link.
+    Look up property owner and zoning for an address.
+    Strategy: Try city ArcGIS API first (free, accurate), fall back to SerpAPI.
     """
     cache_key = address
     cached = get_cached(CACHE_NAME, cache_key)
@@ -27,64 +44,158 @@ def lookup_property(address, api_key=None):
     result = {
         "property_owner": "",
         "zoning": "",
+        "zoning_uses": "",
+        "parcel_id": "",
+        "data_source": "",
         "property_snippets": [],
         "management_search": "",
         "loopnet_link": "",
         "assessor_link": "",
+        "secondary_contacts": {},
     }
 
-    # Always generate direct lookup links regardless of API availability
+    # Parse address
     parts = [p.strip() for p in address.split(",")]
     street = parts[0] if parts else address
     city = parts[1].strip() if len(parts) > 1 else ""
 
-    # LoopNet link (great for commercial property details)
+    # Generate lookup links
     loopnet_query = f'site:loopnet.com "{street}" {city}'
-    result["loopnet_link"] = (
-        f"https://www.google.com/search?q={quote_plus(loopnet_query)}"
-    )
-
-    # County assessor link
+    result["loopnet_link"] = f"https://www.google.com/search?q={quote_plus(loopnet_query)}"
     county, assessor_url = get_property_search_url(address)
     if assessor_url:
         result["assessor_link"] = assessor_url
 
-    serpapi_key = api_key or os.environ.get("SERPAPI_KEY", "")
-    if not serpapi_key:
-        set_cached(CACHE_NAME, cache_key, result)
-        return result
+    # === Strategy 1: Try ArcGIS direct lookup (free, instant, accurate) ===
+    arcgis_result = _query_arcgis(street, city)
+    if arcgis_result:
+        result["property_owner"] = arcgis_result.get("owner", "")
+        result["zoning"] = arcgis_result.get("zoning", "")
+        result["parcel_id"] = arcgis_result.get("parcel_id", "")
+        result["data_source"] = arcgis_result.get("source", "ArcGIS")
 
-    # Search 1: Property owner (uses 2 SerpAPI calls)
-    owner_snippets = _search_property_owner(address, serpapi_key)
-    result["property_snippets"] = owner_snippets
+        # Use Haiku to interpret what the zoning allows
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if result["zoning"] and anthropic_key:
+            result["zoning_uses"] = _interpret_zoning(result["zoning"], city, anthropic_key)
 
-    # Search 2: Zoning (uses 1 SerpAPI call)
-    zoning_snippets = _search_zoning(address, serpapi_key)
+    # === Strategy 2: Fall back to SerpAPI if ArcGIS didn't find it ===
+    if not result["property_owner"] and not result["zoning"]:
+        serpapi_key = api_key or os.environ.get("SERPAPI_KEY", "")
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
-    # Use Haiku to extract clean property owner and zoning
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if anthropic_key:
-        result["property_owner"] = _extract_property_owner(
-            owner_snippets, address, anthropic_key
-        )
-        result["zoning"] = _extract_zoning(
-            zoning_snippets, address, anthropic_key
-        )
+        if serpapi_key:
+            owner_snippets = _search_property_owner(address, serpapi_key)
+            result["property_snippets"] = owner_snippets
+            zoning_snippets = _search_zoning(address, serpapi_key)
 
-    # If we found a property owner, search for their management/leasing contacts
-    if result["property_owner"] and serpapi_key and anthropic_key:
+            if anthropic_key:
+                result["property_owner"] = _extract_property_owner(
+                    owner_snippets, address, anthropic_key
+                )
+                zoning_full = _extract_zoning(zoning_snippets, address, anthropic_key)
+                if zoning_full:
+                    lines = zoning_full.split("\n")
+                    result["zoning"] = lines[0]
+                    if len(lines) > 1:
+                        result["zoning_uses"] = lines[1]
+
+            result["data_source"] = "SerpAPI"
+
+    # === Search for management/leasing contacts if we found a property owner ===
+    if result["property_owner"]:
         owner = result["property_owner"]
         query = f"{owner} property management contact"
-        result["management_search"] = (
-            f"https://www.google.com/search?q={quote_plus(query)}"
-        )
-        secondary = _search_secondary_contacts(owner, address, serpapi_key, anthropic_key)
-        result["secondary_contacts"] = secondary
-    else:
-        result["secondary_contacts"] = {}
+        result["management_search"] = f"https://www.google.com/search?q={quote_plus(query)}"
+
+        serpapi_key = api_key or os.environ.get("SERPAPI_KEY", "")
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if serpapi_key and anthropic_key:
+            result["secondary_contacts"] = _search_secondary_contacts(
+                owner, address, serpapi_key, anthropic_key
+            )
 
     set_cached(CACHE_NAME, cache_key, result)
     return result
+
+
+def _query_arcgis(street, city):
+    """Query city ArcGIS FeatureServer for property/zoning data."""
+    # Normalize city name
+    city_clean = city.strip().title()
+
+    if city_clean not in ARCGIS_ENDPOINTS:
+        return None
+
+    config = ARCGIS_ENDPOINTS[city_clean]
+    url = f"{config['url']}/{config['layer']}/query"
+    fields = config["fields"]
+
+    # Build address search — use LIKE for fuzzy matching
+    # Strip "Street", "St", "Road", "Rd" etc. to improve matching
+    search_addr = street.split(" Suite")[0].split(" Ste")[0].split(" #")[0].strip()
+
+    params = {
+        "where": f"{fields['address']} LIKE '{search_addr}%'",
+        "outFields": ",".join(fields.values()),
+        "f": "json",
+        "resultRecordCount": 1,
+    }
+
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        data = resp.json()
+    except Exception:
+        return None
+
+    features = data.get("features", [])
+    if not features:
+        return None
+
+    attrs = features[0].get("attributes", {})
+
+    owner = (attrs.get(fields["owner"], "") or "").strip()
+    owner2 = (attrs.get(fields.get("owner2", ""), "") or "").strip()
+    if owner2:
+        owner = f"{owner} / {owner2}"
+
+    zoning_code = (attrs.get(fields["zoning_code"], "") or "").strip()
+    zoning_desc = (attrs.get(fields.get("zoning_desc", ""), "") or "").strip()
+    zoning = f"{zoning_code} - {zoning_desc}" if zoning_desc else zoning_code
+
+    parcel_id = (attrs.get(fields.get("parcel_id", ""), "") or "").strip()
+
+    return {
+        "owner": owner,
+        "zoning": zoning,
+        "parcel_id": parcel_id,
+        "source": f"ArcGIS ({city_clean})",
+    }
+
+
+def _interpret_zoning(zoning, city, api_key):
+    """Use Haiku to explain what a zoning classification typically allows."""
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=100,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Zoning classification: {zoning}\n"
+                    f"City: {city}, Georgia\n\n"
+                    f"What uses are typically allowed under this zoning?\n"
+                    f"Return ONE line starting with 'Typical uses: ' followed by a brief "
+                    f"comma-separated list (e.g. retail, restaurants, offices, etc.)\n"
+                    f"No other text."
+                ),
+            }],
+        )
+        text = message.content[0].text.strip()
+        return text.split("\n")[0]
+    except Exception:
+        return ""
 
 
 def _search_property_owner(address, api_key):
