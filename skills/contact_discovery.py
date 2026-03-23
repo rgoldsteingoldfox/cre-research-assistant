@@ -3,6 +3,7 @@
 import os
 import re
 import requests
+import anthropic
 from bs4 import BeautifulSoup
 from utils.cache import get_cached, set_cached
 
@@ -50,94 +51,50 @@ def research_business(business_name, city, website=None, api_key=None):
 
 
 def _extract_owner_from_snippets(snippets, business_name):
-    """Extract a clean owner/founder name from SerpAPI snippet text."""
-    biz_lower = business_name.lower()
-    candidates = []
+    """Use Claude Haiku to extract owner name from SerpAPI snippets."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return ""
 
-    for snippet in snippets:
-        # Skip error/empty snippets
-        if snippet.startswith("(") or "No owner info" in snippet:
-            continue
+    # Skip if no real snippets
+    real_snippets = [s for s in snippets if not s.startswith("(") and "No owner info" not in s]
+    if not real_snippets:
+        return ""
 
-        patterns = [
-            # "owner Sabrina Kaylor" or "owner, John Smith" or "owner @Name"
-            r'[Oo]wner[,:]?\s+(?:@)?([A-Z][a-z]+(?:\s+[A-Z][a-z\']+)+)',
-            # "founder Jonathan D. Golden"
-            r'[Ff]ounder[,:]?\s+(?:@)?([A-Z][a-z]+(?:\s+[A-Z]\.?\s*[A-Z]?[a-z\']*)+)',
-            # "owned and operated by a sole business owner named Hassane"
-            r'owner\s+named\s+([A-Z][a-z]+(?:\s+[A-Z][a-z\']+)*)',
-            # "owned by John Smith" or "owned and operated by..."
-            r'[Oo]wned\s+(?:and operated\s+)?by\s+(?:@)?([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)*(?:\s+[A-Z][a-z\']+)*)',
-            # "founded by John Smith"
-            r'[Ff]ounded\s+by\s+(?:@)?([A-Z][a-z]+(?:\s+(?:and|&)\s+[A-Z][a-z]+)*(?:\s+[A-Z][a-z\']+)*)',
-            # "co-owner John Smith" or "co-owner, John Smith"
-            r'[Cc]o-?owner[,:]?\s+(?:@)?([A-Z][a-z]+(?:\s+[A-Z][a-z\']+)+)',
-            # "Chef-owner John Smith"
-            r'[Cc]hef[/-][Oo]wner\s+(?:@)?([A-Z][a-z]+(?:\s+[A-Z][a-z\']+)+)',
-            # "Meet Colin, the co-owner" or "Meet our owner, Gordy"
-            r'[Mm]eet\s+(?:our\s+)?(?:owner,?\s+)?(?:@)?([A-Z][a-z]+)',
-            # "John Smith, owner" or "John Smith, founder"
-            r'([A-Z][a-z]+(?:\s+[A-Z][a-z\']+)+),?\s+(?:the\s+)?(?:owner|founder|co-owner|proprietor)',
-            # Knowledge Graph format: "Owner: John Smith"
-            r'(?:Owner|Founder):\s+([A-Z][a-z]+(?:\s+[A-Z][a-z\']+)*)',
-            # "Tony is the owner"
-            r'([A-Z][a-z]+(?:\s+[A-Z][a-z\']+)*)\s+is\s+the\s+(?:owner|founder|co-owner)',
-        ]
+    snippet_text = "\n".join(real_snippets)
 
-        for pat in patterns:
-            for match in re.finditer(pat, snippet):
-                name = match.group(1).strip().rstrip('.,;:')
-                name = _clean_owner_name(name, biz_lower)
-                if name:
-                    candidates.append(name)
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=100,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Below are Google search snippets about \"{business_name}\".\n\n"
+                    f"{snippet_text}\n\n"
+                    f"Who is the owner or founder of \"{business_name}\" specifically?\n\n"
+                    f"Rules:\n"
+                    f"- Return ONLY the name, nothing else. No explanation.\n"
+                    f"- If multiple owners, separate with ' & '.\n"
+                    f"- Ignore owners of different businesses.\n"
+                    f"- If only a first name is available, return just that.\n"
+                    f"- If you cannot determine the owner, return exactly: UNKNOWN\n"
+                    f"- Your entire response must be just the name or UNKNOWN."
+                ),
+            }],
+        )
+        name = message.content[0].text.strip()
+        # Reject if UNKNOWN, too long (Haiku got chatty), or empty
+        if not name or name == "UNKNOWN" or len(name) > 60:
+            return ""
+        # If response has multiple lines, just take the first
+        name = name.split("\n")[0].strip()
+        return name
+    except Exception as e:
+        print(f"    (Haiku extraction error: {e})")
 
-    # Prefer names with first + last over single names
-    full_names = [n for n in candidates if ' ' in n]
-    if full_names:
-        return full_names[0]
-    if candidates:
-        return candidates[0]
     return ""
-
-
-def _clean_owner_name(name, biz_lower):
-    """Validate and clean an extracted owner name. Returns empty string if invalid."""
-    # Strip leading title words that aren't part of the name
-    strip_prefixes = [
-        'Veteran Stuntwoman ', 'Chef ', 'Dr ', 'Mr ', 'Mrs ', 'Ms ',
-        'Part ', 'General ', 'Our ',
-    ]
-    for prefix in strip_prefixes:
-        if name.startswith(prefix):
-            name = name[len(prefix):]
-
-    name = name.strip().rstrip('.,;:')
-
-    # Reject if empty or too short/long
-    if not name or len(name) < 2 or len(name) > 40:
-        return ""
-
-    # Reject generic/bad words as the entire name or first word
-    bad_words = {
-        'the', 'our', 'their', 'this', 'coffee', 'cafe', 'shop', 'house',
-        'roaster', 'bakery', 'restaurant', 'meet', 'crush', 'big', 'oak',
-        'tavern', 'brewing', 'brewery', 'provisions', 'kitchen', 'market',
-    }
-    first_word = name.split()[0].lower()
-    if first_word in bad_words:
-        return ""
-    if name.lower() in bad_words:
-        return ""
-
-    # Reject if name is part of a different business (contains "'s" + business word)
-    if "'s " in name and any(w in name.lower() for w in ['tavern', 'bar', 'grill', 'cafe', 'coffee', 'shop']):
-        return ""
-
-    # Reject if it's the business name itself
-    if name.lower() in biz_lower:
-        return ""
-
-    return name
 
 
 def _search_owner(business_name, city, api_key=None):
