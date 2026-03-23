@@ -58,14 +58,15 @@ for z in [
     ZIP_TO_COUNTY[str(z)] = "Forsyth"
 
 
-# County-specific property search URLs
-COUNTY_GIS_URLS = {
-    "Fulton": "https://iasworld.fultonassessor.org/iasworld/iasworld/#/search/parcel?address={address}",
-    "Cobb": "https://www.cobbassessor.org/Search.aspx?search={address}",
-    "DeKalb": "https://www.dekalbcountyga.gov/revenue/property-tax-search",
-    "Gwinnett": "https://www.gwinnettassessor.com/",
-    "Cherokee": "https://qpublic.schneidercorp.com/Application.aspx?AppID=628&LayerID=11170&PageTypeID=2&PageID=5747",
-    "Forsyth": "https://qpublic.schneidercorp.com/Application.aspx?AppID=1003&LayerID=20378&PageTypeID=2&PageID=8996",
+# County-specific property search - use Google to find the assessor record
+# Direct assessor URLs are unreliable (blocked, JS-rendered, broken deep links)
+COUNTY_SEARCH_TEMPLATES = {
+    "Fulton": "Fulton County GA tax assessor property",
+    "Cobb": "Cobb County GA tax assessor property",
+    "DeKalb": "DeKalb County GA tax assessor property",
+    "Gwinnett": "Gwinnett County GA tax assessor property",
+    "Cherokee": "Cherokee County GA tax assessor property",
+    "Forsyth": "Forsyth County GA tax assessor property",
 }
 
 
@@ -80,14 +81,13 @@ def detect_county(address):
 
 
 def get_property_search_url(address):
-    """Get the county-specific property search URL for an address."""
+    """Get a Google search URL that finds the county assessor record for this address."""
+    from urllib.parse import quote_plus
     county = detect_county(address)
-    if county in COUNTY_GIS_URLS:
-        # Some URLs support address injection, others are just base URLs
-        url = COUNTY_GIS_URLS[county]
-        if "{address}" in url:
-            # Use just the street portion for search
-            street = address.split(",")[0].strip()
-            return county, url.format(address=street)
+    street = address.split(",")[0].strip()
+
+    if county in COUNTY_SEARCH_TEMPLATES:
+        query = f'{COUNTY_SEARCH_TEMPLATES[county]} "{street}"'
+        url = f"https://www.google.com/search?q={quote_plus(query)}"
         return county, url
     return county, None
