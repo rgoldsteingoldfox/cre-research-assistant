@@ -24,7 +24,22 @@ ARCGIS_ENDPOINTS = {
             "parcel_id": "PARCELID",
         },
     },
-    # More cities added as we discover their endpoints
+    "Alpharetta": {
+        "url": "https://alphagis.alpharetta.ga.us/arcgis/rest/services/TaxParcels/FeatureServer",
+        "layer": 0,
+        "fields": {
+            "address": "Address",
+            "zoning_code": "ClassCode",
+            "zoning_desc": "",  # No description field — just the code
+            "owner": "Owner",
+            "owner2": "",
+            "parcel_id": "ParcelID",
+        },
+    },
+    # Cities with confirmed ArcGIS endpoints but needing spatial queries (future):
+    # Milton: zoning at services.arcgis.com/f4rR7WnIfGBdVYFd/.../Zoning_Districts (ZONE, ZONE_DESC)
+    # Marietta: zoning at secure.mariettaga.gov/arcgis/.../MapServer/37
+    # Canton/Woodstock: Cherokee County parcels (needs field verification)
 }
 
 
@@ -137,7 +152,7 @@ def _query_arcgis(street, city):
 
     params = {
         "where": f"{fields['address']} LIKE '{search_addr}%'",
-        "outFields": ",".join(fields.values()),
+        "outFields": ",".join(v for v in fields.values() if v),
         "f": "json",
         "resultRecordCount": 1,
     }
