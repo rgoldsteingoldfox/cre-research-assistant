@@ -83,7 +83,10 @@ def print_deep_dive(biz, contacts, links, property_data=None):
             print(f"\n  Not found via search")
 
         if property_data.get("zoning"):
-            print(f"  Zoning: {property_data['zoning']}")
+            zoning_lines = property_data["zoning"].split("\n")
+            print(f"  Zoning: {zoning_lines[0]}")
+            if len(zoning_lines) > 1:
+                print(f"  {zoning_lines[1]}")
 
         # Secondary contacts (mgmt company, leasing agent, etc.)
         sec = property_data.get("secondary_contacts", {})

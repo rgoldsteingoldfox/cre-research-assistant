@@ -218,7 +218,7 @@ def _extract_zoning(snippets, address, api_key):
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=100,
+            max_tokens=150,
             messages=[{
                 "role": "user",
                 "content": (
@@ -226,18 +226,21 @@ def _extract_zoning(snippets, address, api_key):
                     f"{snippet_text}\n\n"
                     f"What is the zoning classification for this property?\n\n"
                     f"Rules:\n"
-                    f"- Return ONLY the zoning code and description, e.g. 'C-1 (Commercial)' "
-                    f"or 'Mixed Use' or 'CUP (Commercial Use Permit)'\n"
-                    f"- Keep it short — just the classification.\n"
-                    f"- If you cannot determine it, return exactly: UNKNOWN\n"
-                    f"- Your entire response must be just the zoning or UNKNOWN."
+                    f"- First line: the zoning code and description, e.g. 'C-1 (Commercial)'\n"
+                    f"- Second line: 'Typical uses: ' followed by a brief list of what's "
+                    f"typically allowed under this zoning in Georgia municipalities "
+                    f"(e.g. retail, restaurants, offices, medical, auto, residential, etc.)\n"
+                    f"- Keep it to 2 lines total. No other text.\n"
+                    f"- If you cannot determine the zoning, return exactly: UNKNOWN"
                 ),
             }],
         )
         zoning = message.content[0].text.strip()
-        if not zoning or zoning == "UNKNOWN" or len(zoning) > 80:
+        if not zoning or zoning == "UNKNOWN":
             return ""
-        return zoning.split("\n")[0].strip()
+        # Keep the full 2-line response (code + typical uses)
+        lines = [l.strip() for l in zoning.split("\n") if l.strip()]
+        return "\n".join(lines[:2])
     except Exception as e:
         print(f"    (Haiku zoning extraction error: {e})")
         return ""
