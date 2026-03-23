@@ -71,13 +71,17 @@ def lookup_property(address, api_key=None):
             zoning_snippets, address, anthropic_key
         )
 
-    # Generate management company search link
-    if result["property_owner"]:
+    # If we found a property owner, search for their management/leasing contacts
+    if result["property_owner"] and serpapi_key and anthropic_key:
         owner = result["property_owner"]
         query = f"{owner} property management contact"
         result["management_search"] = (
             f"https://www.google.com/search?q={quote_plus(query)}"
         )
+        secondary = _search_secondary_contacts(owner, address, serpapi_key, anthropic_key)
+        result["secondary_contacts"] = secondary
+    else:
+        result["secondary_contacts"] = {}
 
     set_cached(CACHE_NAME, cache_key, result)
     return result
@@ -237,3 +241,98 @@ def _extract_zoning(snippets, address, api_key):
     except Exception as e:
         print(f"    (Haiku zoning extraction error: {e})")
         return ""
+
+
+def _search_secondary_contacts(owner_entity, address, serpapi_key, anthropic_key):
+    """
+    When we know the property owner (LLC/company), search for their
+    management company, leasing agent, or broker contact info.
+    Returns dict with mgmt_company, leasing_contact, phone, email.
+    """
+    result = {
+        "mgmt_company": "",
+        "leasing_contact": "",
+        "phone": "",
+        "email": "",
+    }
+
+    # Search for the LLC/owner entity + contact info
+    query = f'"{owner_entity}" property management OR leasing OR broker contact phone email'
+
+    params = {
+        "q": query,
+        "api_key": serpapi_key,
+        "engine": "google",
+        "num": 5,
+    }
+
+    try:
+        resp = requests.get(SERPAPI_URL, params=params, timeout=10)
+        data = resp.json()
+    except Exception:
+        return result
+
+    snippets = []
+    for r in data.get("organic_results", [])[:4]:
+        text_parts = []
+        if r.get("title"):
+            text_parts.append(r["title"])
+        if r.get("snippet"):
+            text_parts.append(r["snippet"])
+        source = r.get("displayed_link", "")
+        if text_parts:
+            snippets.append(f"[{source}] {' — '.join(text_parts)}")
+
+    if not snippets:
+        return result
+
+    snippet_text = "\n".join(snippets)
+
+    try:
+        client = anthropic.Anthropic(api_key=anthropic_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"The property owner is: {owner_entity}\n"
+                    f"Property address: {address}\n\n"
+                    f"Below are Google search results:\n{snippet_text}\n\n"
+                    f"Extract any of the following if available:\n"
+                    f"1. Property management company name\n"
+                    f"2. Leasing agent or broker name\n"
+                    f"3. Phone number\n"
+                    f"4. Email address\n\n"
+                    f"Return in this exact format (use UNKNOWN for missing fields):\n"
+                    f"MGMT: [company name]\n"
+                    f"LEASING: [person name]\n"
+                    f"PHONE: [number]\n"
+                    f"EMAIL: [email]\n"
+                    f"No other text."
+                ),
+            }],
+        )
+        text = message.content[0].text.strip()
+        for line in text.split("\n"):
+            line = line.strip()
+            if line.startswith("MGMT:"):
+                val = line[5:].strip()
+                if val and val != "UNKNOWN":
+                    result["mgmt_company"] = val
+            elif line.startswith("LEASING:"):
+                val = line[8:].strip()
+                if val and val != "UNKNOWN":
+                    result["leasing_contact"] = val
+            elif line.startswith("PHONE:"):
+                val = line[6:].strip()
+                if val and val != "UNKNOWN":
+                    result["phone"] = val
+            elif line.startswith("EMAIL:"):
+                val = line[6:].strip()
+                if val and val != "UNKNOWN":
+                    result["email"] = val
+    except Exception as e:
+        print(f"    (Secondary contact error: {e})")
+
+    return result

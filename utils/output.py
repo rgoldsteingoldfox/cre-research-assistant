@@ -1,7 +1,6 @@
 """Terminal output formatting for CRE Research Assistant."""
 
 import csv
-import io
 
 
 DIVIDER = "=" * 60
@@ -26,7 +25,6 @@ def print_business_list(businesses):
         if phone:
             print(f"       Phone: {phone}")
         if website:
-            # Truncate long URLs for display
             display_url = website if len(website) < 60 else website[:57] + "..."
             print(f"       Web:   {display_url}")
         print()
@@ -35,83 +33,99 @@ def print_business_list(businesses):
 def print_deep_dive(biz, contacts, links, property_data=None):
     """Print detailed research output for a single business."""
     print(f"\n{DIVIDER}")
-    print(f"  DEEP DIVE: {biz['name']}")
+    print(f"  {biz['name']}")
+    print(f"  {biz['address']}")
     print(DIVIDER)
 
-    print(f"\n  Address:  {biz['address']}")
-    if biz.get("phone"):
-        print(f"  Phone:    {biz['phone']}")
-    if biz.get("website"):
-        print(f"  Website:  {biz['website']}")
-
-    # Contact discovery results
+    # ── DIRECT CONTACT ──
     print(f"\n  {THIN_DIVIDER}")
-    print("  TENANT / BUSINESS OWNER")
+    print("  DIRECT CONTACT")
+    print(f"  {THIN_DIVIDER}")
+
+    print(f"\n  Phone:   {biz.get('phone') or 'not found'}")
+    print(f"  Website: {biz.get('website') or 'not found'}")
+
+    # ── BUSINESS OWNER ──
+    print(f"\n  {THIN_DIVIDER}")
+    print("  BUSINESS OWNER (TENANT)")
     print(f"  {THIN_DIVIDER}")
 
     if contacts.get("owner_name"):
-        print(f"\n  >>> BUSINESS OWNER: {contacts['owner_name']} <<<")
+        print(f"\n  >>> {contacts['owner_name']} <<<")
+    else:
+        print(f"\n  Not found")
 
-    if contacts.get("emails"):
-        print("\n  Emails found:")
-        for email in contacts["emails"]:
-            print(f"    - {email}")
+    # ── ADDITIONAL CONTACTS ──
+    if contacts.get("emails") or contacts.get("phones") or contacts.get("names"):
+        print(f"\n  {THIN_DIVIDER}")
+        print("  ADDITIONAL CONTACTS (from website)")
+        print(f"  {THIN_DIVIDER}")
 
-    if contacts.get("phones"):
-        print("\n  Phone numbers found:")
-        for phone in contacts["phones"]:
-            print(f"    - {phone}")
+        if contacts.get("emails"):
+            for email in contacts["emails"]:
+                print(f"\n  Email: {email}")
+        if contacts.get("phones"):
+            for phone in contacts["phones"]:
+                print(f"  Phone: {phone}")
+        if contacts.get("names"):
+            for name in contacts["names"]:
+                print(f"  Name:  {name}")
 
-    if contacts.get("names"):
-        print("\n  Other names (from website):")
-        for name in contacts["names"]:
-            print(f"    - {name}")
-
-    if not any([contacts.get("owner_name"), contacts.get("emails"),
-                contacts.get("phones"), contacts.get("names")]):
-        print("\n  No tenant contact info found.")
-
-    # Property ownership
+    # ── PROPERTY OWNER / LANDLORD ──
     print(f"\n  {THIN_DIVIDER}")
     print("  PROPERTY OWNER / LANDLORD")
     print(f"  {THIN_DIVIDER}")
 
     if property_data:
         if property_data.get("property_owner"):
-            print(f"\n  >>> PROPERTY OWNER: {property_data['property_owner']} <<<")
+            print(f"\n  >>> {property_data['property_owner']} <<<")
         else:
-            print(f"\n  Property owner: not found via search")
+            print(f"\n  Not found via search")
 
         if property_data.get("zoning"):
             print(f"  Zoning: {property_data['zoning']}")
 
-        if property_data.get("management_search"):
-            print(f"\n  Management co. search: {property_data['management_search']}")
-
-        # Direct lookup links — these are always useful
-        print(f"\n  Quick lookups:")
-        if property_data.get("loopnet_link"):
-            print(f"    LoopNet:          {property_data['loopnet_link']}")
-        if property_data.get("assessor_link"):
-            print(f"    County assessor:  {property_data['assessor_link']}")
+        # Secondary contacts (mgmt company, leasing agent, etc.)
+        sec = property_data.get("secondary_contacts", {})
+        if any(sec.values()):
+            print(f"\n  {THIN_DIVIDER}")
+            print("  PROPERTY MANAGEMENT / LEASING")
+            print(f"  {THIN_DIVIDER}")
+            if sec.get("mgmt_company"):
+                print(f"\n  Management Co: {sec['mgmt_company']}")
+            if sec.get("leasing_contact"):
+                print(f"  Leasing Agent: {sec['leasing_contact']}")
+            if sec.get("phone"):
+                print(f"  Phone:         {sec['phone']}")
+            if sec.get("email"):
+                print(f"  Email:         {sec['email']}")
     else:
         print("\n  (Property lookup not run)")
 
-    # Research links
+    # ── RESEARCH LINKS ──
     print(f"\n  {THIN_DIVIDER}")
     print("  RESEARCH LINKS")
     print(f"  {THIN_DIVIDER}")
 
     if links.get("owner_search"):
-        print(f"\n  Tenant owner search:  {links['owner_search']}")
-    if links.get("zoning_search"):
-        print(f"  Zoning search:        {links['zoning_search']}")
+        print(f"\n  Business owner:    {links['owner_search']}")
     if links.get("property_search"):
-        print(f"  Property owner search:{links['property_search']}")
+        print(f"  Property owner:    {links['property_search']}")
+    if links.get("leasing_search"):
+        print(f"  Leasing:           {links['leasing_search']}")
+    if links.get("property_manager_search"):
+        print(f"  Property manager:  {links['property_manager_search']}")
+    if links.get("zoning_search"):
+        print(f"  Zoning:            {links['zoning_search']}")
+
+    # Quick lookup links
+    if property_data:
+        if property_data.get("loopnet_link"):
+            print(f"  LoopNet:           {property_data['loopnet_link']}")
+        if property_data.get("assessor_link"):
+            print(f"  County assessor:   {property_data['assessor_link']}")
     if links.get("county"):
-        print(f"  County:               {links['county']}")
-    if links.get("county_gis"):
-        print(f"  County GIS:           {links['county_gis']}")
+        print(f"  County:            {links['county']}")
 
     print()
 
@@ -122,9 +136,12 @@ def export_csv(filepath, businesses, research_data=None):
         "name", "address", "phone", "website",
         "business_owner", "emails_found", "phones_found",
         "property_owner", "zoning",
-        "management_search", "loopnet_link", "assessor_link",
-        "county", "county_gis_link",
-        "owner_search_link", "zoning_search_link", "property_search_link",
+        "mgmt_company", "leasing_contact", "mgmt_phone", "mgmt_email",
+        "loopnet_link", "assessor_link",
+        "county",
+        "owner_search_link", "property_search_link",
+        "leasing_search_link", "property_manager_search_link",
+        "zoning_search_link",
     ]
 
     with open(filepath, "w", newline="") as f:
@@ -144,19 +161,25 @@ def export_csv(filepath, businesses, research_data=None):
                 contacts = research_data[key].get("contacts", {})
                 links = research_data[key].get("links", {})
                 prop = research_data[key].get("property", {})
+                sec = prop.get("secondary_contacts", {})
+
                 row["business_owner"] = contacts.get("owner_name", "")
                 row["emails_found"] = " | ".join(contacts.get("emails", []))
                 row["phones_found"] = " | ".join(contacts.get("phones", []))
                 row["property_owner"] = prop.get("property_owner", "")
                 row["zoning"] = prop.get("zoning", "")
-                row["management_search"] = prop.get("management_search", "")
+                row["mgmt_company"] = sec.get("mgmt_company", "")
+                row["leasing_contact"] = sec.get("leasing_contact", "")
+                row["mgmt_phone"] = sec.get("phone", "")
+                row["mgmt_email"] = sec.get("email", "")
                 row["loopnet_link"] = prop.get("loopnet_link", "")
                 row["assessor_link"] = prop.get("assessor_link", "")
-                row["owner_search_link"] = links.get("owner_search", "")
-                row["zoning_search_link"] = links.get("zoning_search", "")
-                row["property_search_link"] = links.get("property_search", "")
                 row["county"] = links.get("county", "")
-                row["county_gis_link"] = links.get("county_gis", "")
+                row["owner_search_link"] = links.get("owner_search", "")
+                row["property_search_link"] = links.get("property_search", "")
+                row["leasing_search_link"] = links.get("leasing_search", "")
+                row["property_manager_search_link"] = links.get("property_manager_search", "")
+                row["zoning_search_link"] = links.get("zoning_search", "")
 
             writer.writerow(row)
 
