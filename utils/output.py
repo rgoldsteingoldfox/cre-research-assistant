@@ -32,7 +32,7 @@ def print_business_list(businesses):
         print()
 
 
-def print_deep_dive(biz, contacts, links):
+def print_deep_dive(biz, contacts, links, property_data=None):
     """Print detailed research output for a single business."""
     print(f"\n{DIVIDER}")
     print(f"  DEEP DIVE: {biz['name']}")
@@ -46,16 +46,11 @@ def print_deep_dive(biz, contacts, links):
 
     # Contact discovery results
     print(f"\n  {THIN_DIVIDER}")
-    print("  CONTACT DISCOVERY")
+    print("  TENANT / BUSINESS OWNER")
     print(f"  {THIN_DIVIDER}")
 
     if contacts.get("owner_name"):
-        print(f"\n  >>> OWNER: {contacts['owner_name']} <<<")
-
-    if contacts.get("owner_snippets"):
-        print("\n  Search snippets:")
-        for snippet in contacts["owner_snippets"]:
-            print(f"    - {snippet}")
+        print(f"\n  >>> BUSINESS OWNER: {contacts['owner_name']} <<<")
 
     if contacts.get("emails"):
         print("\n  Emails found:")
@@ -68,13 +63,39 @@ def print_deep_dive(biz, contacts, links):
             print(f"    - {phone}")
 
     if contacts.get("names"):
-        print("\n  Possible owner names (from website):")
+        print("\n  Other names (from website):")
         for name in contacts["names"]:
             print(f"    - {name}")
 
-    if not any([contacts.get("owner_snippets"), contacts.get("emails"),
+    if not any([contacts.get("owner_name"), contacts.get("emails"),
                 contacts.get("phones"), contacts.get("names")]):
-        print("\n  No additional contacts found.")
+        print("\n  No tenant contact info found.")
+
+    # Property ownership
+    print(f"\n  {THIN_DIVIDER}")
+    print("  PROPERTY OWNER / LANDLORD")
+    print(f"  {THIN_DIVIDER}")
+
+    if property_data:
+        if property_data.get("property_owner"):
+            print(f"\n  >>> PROPERTY OWNER: {property_data['property_owner']} <<<")
+        else:
+            print(f"\n  Property owner: not found via search")
+
+        if property_data.get("zoning"):
+            print(f"  Zoning: {property_data['zoning']}")
+
+        if property_data.get("management_search"):
+            print(f"\n  Management co. search: {property_data['management_search']}")
+
+        # Direct lookup links — these are always useful
+        print(f"\n  Quick lookups:")
+        if property_data.get("loopnet_link"):
+            print(f"    LoopNet:          {property_data['loopnet_link']}")
+        if property_data.get("assessor_link"):
+            print(f"    County assessor:  {property_data['assessor_link']}")
+    else:
+        print("\n  (Property lookup not run)")
 
     # Research links
     print(f"\n  {THIN_DIVIDER}")
@@ -82,15 +103,15 @@ def print_deep_dive(biz, contacts, links):
     print(f"  {THIN_DIVIDER}")
 
     if links.get("owner_search"):
-        print(f"\n  Owner search:    {links['owner_search']}")
+        print(f"\n  Tenant owner search:  {links['owner_search']}")
     if links.get("zoning_search"):
-        print(f"  Zoning search:   {links['zoning_search']}")
+        print(f"  Zoning search:        {links['zoning_search']}")
     if links.get("property_search"):
-        print(f"  Property search: {links['property_search']}")
+        print(f"  Property owner search:{links['property_search']}")
     if links.get("county"):
-        print(f"  County:          {links['county']}")
+        print(f"  County:               {links['county']}")
     if links.get("county_gis"):
-        print(f"  County GIS:      {links['county_gis']}")
+        print(f"  County GIS:           {links['county_gis']}")
 
     print()
 
@@ -98,10 +119,12 @@ def print_deep_dive(biz, contacts, links):
 def export_csv(filepath, businesses, research_data=None):
     """Export results to CSV file."""
     fieldnames = [
-        "name", "address", "phone", "website", "owner_name",
-        "owner_snippets", "emails_found", "phones_found", "names_found",
-        "owner_search_link", "zoning_search_link", "property_search_link",
+        "name", "address", "phone", "website",
+        "business_owner", "emails_found", "phones_found",
+        "property_owner", "zoning",
+        "management_search", "loopnet_link", "assessor_link",
         "county", "county_gis_link",
+        "owner_search_link", "zoning_search_link", "property_search_link",
     ]
 
     with open(filepath, "w", newline="") as f:
@@ -120,11 +143,15 @@ def export_csv(filepath, businesses, research_data=None):
             if research_data and key in research_data:
                 contacts = research_data[key].get("contacts", {})
                 links = research_data[key].get("links", {})
-                row["owner_name"] = contacts.get("owner_name", "")
-                row["owner_snippets"] = " | ".join(contacts.get("owner_snippets", []))
+                prop = research_data[key].get("property", {})
+                row["business_owner"] = contacts.get("owner_name", "")
                 row["emails_found"] = " | ".join(contacts.get("emails", []))
                 row["phones_found"] = " | ".join(contacts.get("phones", []))
-                row["names_found"] = " | ".join(contacts.get("names", []))
+                row["property_owner"] = prop.get("property_owner", "")
+                row["zoning"] = prop.get("zoning", "")
+                row["management_search"] = prop.get("management_search", "")
+                row["loopnet_link"] = prop.get("loopnet_link", "")
+                row["assessor_link"] = prop.get("assessor_link", "")
                 row["owner_search_link"] = links.get("owner_search", "")
                 row["zoning_search_link"] = links.get("zoning_search", "")
                 row["property_search_link"] = links.get("property_search", "")

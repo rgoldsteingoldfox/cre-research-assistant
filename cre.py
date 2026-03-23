@@ -4,10 +4,10 @@ CRE Research Assistant — Help commercial real estate brokers find tenant
 businesses, identify owners/contacts, and look up zoning/property data.
 
 Usage:
-    python3 cre.py                         # Interactive mode
-    python3 cre.py --csv output.csv        # Also save CSV
-    python3 cre.py --all                   # Research all results (not just selected)
-    python3 cre.py --all --csv output.csv  # Both
+    python3 cre.py                                                          # Interactive mode
+    python3 cre.py --type "coffee shops" --location "Roswell, GA"           # Non-interactive
+    python3 cre.py --type "coffee shops" --location "Roswell, GA" --all     # Research all
+    python3 cre.py --type "coffee shops" --location "Roswell, GA" --all --csv output.csv
 """
 
 import os
@@ -24,6 +24,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 from skills.find_businesses import search_businesses
 from skills.contact_discovery import research_business
 from skills.research_links import generate_links
+from skills.property_lookup import lookup_property
 from utils.output import print_header, print_business_list, print_deep_dive, export_csv
 
 
@@ -43,8 +44,11 @@ def deep_dive(biz, city):
         city=city,
     )
 
-    print_deep_dive(biz, contacts, links)
-    return {"contacts": contacts, "links": links}
+    print(f"  Looking up property owner...")
+    property_data = lookup_property(biz["address"])
+
+    print_deep_dive(biz, contacts, links, property_data)
+    return {"contacts": contacts, "links": links, "property": property_data}
 
 
 def interactive_mode(businesses, city):
@@ -87,18 +91,24 @@ def main():
     parser = argparse.ArgumentParser(description="CRE Research Assistant")
     parser.add_argument("--csv", help="Export results to CSV file", metavar="FILE")
     parser.add_argument("--all", action="store_true", help="Research all results automatically")
+    parser.add_argument("--type", help="Business type (e.g., 'coffee shops')", metavar="TYPE")
+    parser.add_argument("--location", help="Location (e.g., 'Roswell, GA')", metavar="LOC")
     args = parser.parse_args()
 
     print_header("CRE RESEARCH ASSISTANT")
     print()
 
-    # Get user input
-    business_type = input("  Business type (e.g., coffee shops): ").strip()
+    # Get user input — from flags or interactive prompts
+    business_type = args.type
+    if not business_type:
+        business_type = input("  Business type (e.g., coffee shops): ").strip()
     if not business_type:
         print("  No business type entered. Exiting.")
         return
 
-    location = input("  Location (e.g., Roswell, GA): ").strip()
+    location = args.location
+    if not location:
+        location = input("  Location (e.g., Roswell, GA): ").strip()
     if not location:
         print("  No location entered. Exiting.")
         return
