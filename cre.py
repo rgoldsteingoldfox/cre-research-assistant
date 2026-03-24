@@ -4,10 +4,12 @@ CRE Research Assistant — Help commercial real estate brokers find tenant
 businesses, identify owners/contacts, and look up zoning/property data.
 
 Usage:
-    python3 cre.py                                                          # Interactive mode
-    python3 cre.py --type "coffee shops" --location "Roswell, GA"           # Non-interactive
-    python3 cre.py --type "coffee shops" --location "Roswell, GA" --all     # Research all
+  Tenant research mode (find businesses + owners):
     python3 cre.py --type "coffee shops" --location "Roswell, GA" --all --csv output.csv
+
+  Property lookup mode (feed addresses, get owner + zoning):
+    python3 cre.py --addresses addresses.txt --csv output.csv
+    python3 cre.py --addresses "1090 Alpharetta St, Roswell, GA; 585 Atlanta St, Roswell, GA"
 """
 
 import os
@@ -87,14 +89,111 @@ def interactive_mode(businesses, city):
     return research_data
 
 
+def property_lookup_mode(addresses, csv_path=None):
+    """Look up property owner + zoning for a list of addresses."""
+    from utils.output import DIVIDER, THIN_DIVIDER
+    import csv
+
+    print_header("PROPERTY LOOKUP MODE")
+    print(f"\n  Looking up {len(addresses)} addresses...\n")
+
+    results = []
+    for i, addr in enumerate(addresses):
+        addr = addr.strip()
+        if not addr:
+            continue
+
+        print(f"  [{i+1}/{len(addresses)}] {addr}...", end=" ", flush=True)
+        prop = lookup_property(addr)
+
+        owner = prop.get("property_owner", "")
+        zoning = prop.get("zoning", "")
+        zoning_uses = prop.get("zoning_uses", "")
+        parcel = prop.get("parcel_id", "")
+        source = prop.get("data_source", "")
+
+        results.append({"address": addr, **prop})
+
+        if owner or zoning:
+            print(f"Owner: {owner or '?'} | Zone: {zoning or '?'} [{source}]")
+        else:
+            print("no data found")
+
+    # Print summary
+    print(f"\n{DIVIDER}")
+    print(f"  RESULTS")
+    print(DIVIDER)
+
+    for r in results:
+        addr = r["address"]
+        owner = r.get("property_owner", "")
+        zoning = r.get("zoning", "")
+        zoning_uses = r.get("zoning_uses", "")
+        parcel = r.get("parcel_id", "")
+
+        print(f"\n  {addr}")
+        print(f"  {THIN_DIVIDER}")
+        if owner:
+            print(f"  Property Owner: {owner}")
+        if zoning:
+            print(f"  Zoning:         {zoning}")
+        if zoning_uses:
+            print(f"  {zoning_uses}")
+        if parcel:
+            print(f"  Parcel ID:      {parcel}")
+        if r.get("management_search"):
+            print(f"  Owner search:   {r['management_search']}")
+        if not owner and not zoning:
+            print(f"  No data found — try the county assessor:")
+            if r.get("assessor_link"):
+                print(f"  {r['assessor_link']}")
+
+    # CSV export
+    if csv_path:
+        fieldnames = [
+            "address", "property_owner", "zoning", "zoning_uses", "parcel_id",
+            "data_source", "management_search", "loopnet_link", "assessor_link",
+        ]
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for r in results:
+                writer.writerow(r)
+        print(f"\n  CSV saved to: {csv_path}")
+
+    found = sum(1 for r in results if r.get("property_owner"))
+    zoned = sum(1 for r in results if r.get("zoning"))
+    print(f"\n{DIVIDER}")
+    print(f"  {len(results)} addresses | {found} owners found | {zoned} zoning found")
+    print(DIVIDER)
+
+
 def main():
     parser = argparse.ArgumentParser(description="CRE Research Assistant")
     parser.add_argument("--csv", help="Export results to CSV file", metavar="FILE")
     parser.add_argument("--all", action="store_true", help="Research all results automatically")
     parser.add_argument("--type", help="Business type (e.g., 'coffee shops')", metavar="TYPE")
     parser.add_argument("--location", help="Location (e.g., 'Roswell, GA')", metavar="LOC")
+    parser.add_argument("--addresses", help="Property lookup mode: file path or semicolon-separated addresses", metavar="ADDRS")
     args = parser.parse_args()
 
+    # === Property Lookup Mode ===
+    if args.addresses:
+        # Check if it's a file path or inline addresses
+        if os.path.isfile(args.addresses):
+            with open(args.addresses, "r") as f:
+                addresses = [line.strip() for line in f if line.strip()]
+        else:
+            addresses = [a.strip() for a in args.addresses.split(";") if a.strip()]
+
+        if not addresses:
+            print("  No addresses found. Exiting.")
+            return
+
+        property_lookup_mode(addresses, args.csv)
+        return
+
+    # === Tenant Research Mode ===
     print_header("CRE RESEARCH ASSISTANT")
     print()
 

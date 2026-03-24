@@ -198,12 +198,14 @@ def _interpret_zoning(zoning, city, api_key):
             messages=[{
                 "role": "user",
                 "content": (
-                    f"Zoning classification: {zoning}\n"
+                    f"Zoning code: {zoning}\n"
                     f"City: {city}, Georgia\n\n"
-                    f"What uses are typically allowed under this zoning?\n"
-                    f"Return ONE line starting with 'Typical uses: ' followed by a brief "
-                    f"comma-separated list (e.g. retail, restaurants, offices, etc.)\n"
-                    f"No other text."
+                    f"Based on the zoning CODE LETTER (C=Commercial, R=Residential, "
+                    f"M=Mixed, I=Industrial, O=Office, etc.) and common Georgia municipal "
+                    f"zoning standards, what uses are typically allowed?\n"
+                    f"Return ONE line: 'Typical uses: ' followed by a comma-separated list.\n"
+                    f"If unsure of the specific code, interpret the letter prefix.\n"
+                    f"No other text. No disclaimers. Just the one line."
                 ),
             }],
         )
