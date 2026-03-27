@@ -62,6 +62,41 @@ COUNTY_ARCGIS_ENDPOINTS = {
             "Palmetto", "Hapeville", "Chattahoochee Hills", "Mountain Park",
         ],
     },
+    "Cobb": {
+        "url": "https://services.arcgis.com/seTexOicoRXDvRsJ/arcgis/rest/services/Parcels_Enriched/FeatureServer",
+        "layer": 0,
+        "fields": {
+            "address": "LOCATION_ADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNER_NAME",
+            "owner2": "",
+            "parcel_id": "STATE_PARCEL_NO",
+            "mail_addr1": "MAILING_ADDRESS_LINE_1",
+            "mail_addr2": "MAILING_CITY_NAME",
+        },
+        "cities": [
+            "Marietta", "Smyrna", "Kennesaw", "Acworth",
+            "Powder Springs", "Austell", "Mableton",
+        ],
+    },
+    "Gwinnett": {
+        "url": "https://services3.arcgis.com/RfpmnkSAQleRbndX/arcgis/rest/services/Property_and_Tax/FeatureServer",
+        "layer": 0,
+        "fields": {
+            "address": "ADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "USERNAME",
+            "owner2": "",
+            "parcel_id": "PIN",
+        },
+        "cities": [
+            "Duluth", "Lawrenceville", "Suwanee", "Norcross",
+            "Peachtree Corners", "Lilburn", "Snellville",
+            "Buford", "Dacula", "Grayson", "Loganville",
+        ],
+    },
 }
 
 
@@ -244,8 +279,11 @@ def _query_arcgis(street, city):
             second_word = words[1][:5]  # First 5 chars of street name
             search_addr = f"{street_num} {second_word}"
 
+    # Uppercase for case-insensitive matching (some counties store UPPERCASE)
+    search_addr_upper = search_addr.upper()
+
     params = {
-        "where": f"{fields['address']} LIKE '{search_addr}%'",
+        "where": f"{fields['address']} LIKE '{search_addr_upper}%'",
         "outFields": ",".join(v for v in fields.values() if v),
         "f": "json",
         "resultRecordCount": 1,
