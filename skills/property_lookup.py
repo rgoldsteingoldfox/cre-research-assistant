@@ -550,15 +550,19 @@ def _get_enrichment(address):
     try:
         with open(enrichments_path, "r") as f:
             data = json.load(f)
-        # Try exact match first, then fuzzy (street number + first word)
+        # Try exact match first
         if address in data:
             return data[address]
-        # Fuzzy: match on street number + street name prefix
-        street = address.split(",")[0].strip().upper()
-        for key, val in data.items():
-            key_street = key.split(",")[0].strip().upper()
-            if key_street == street:
-                return val
+        # Fuzzy: match on street number + city
+        # "7900 Northpoint Parkway, Alpharetta" matches "7900 North Point Pkwy, Alpharetta"
+        addr_num = re.match(r'^(\d+)', address.split(",")[0].strip())
+        addr_city = address.split(",")[1].strip().upper() if "," in address else ""
+        if addr_num:
+            for key, val in data.items():
+                key_num = re.match(r'^(\d+)', key.split(",")[0].strip())
+                key_city = key.split(",")[1].strip().upper() if "," in key else ""
+                if key_num and addr_num.group(1) == key_num.group(1) and addr_city == key_city:
+                    return val
         return None
     except Exception:
         return None
