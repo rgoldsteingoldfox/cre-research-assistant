@@ -3,4 +3,4 @@ beautifulsoup4
 python-dotenv
 anthropic
 streamlit
-pymupdf
+PyMuPDF
