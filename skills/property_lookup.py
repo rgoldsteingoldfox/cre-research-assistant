@@ -38,10 +38,30 @@ ARCGIS_ENDPOINTS = {
             "mail_addr2": "OwnerAddr2",
         },
     },
-    # Cities with confirmed ArcGIS endpoints but needing spatial queries (future):
-    # Milton: zoning at services.arcgis.com/f4rR7WnIfGBdVYFd/.../Zoning_Districts (ZONE, ZONE_DESC)
-    # Marietta: zoning at secure.mariettaga.gov/arcgis/.../MapServer/37
-    # Canton/Woodstock: Cherokee County parcels (needs field verification)
+}
+
+# County-level ArcGIS endpoints — cover ALL cities in the county
+# These use MapServer (not FeatureServer) but query the same way
+COUNTY_ARCGIS_ENDPOINTS = {
+    "Fulton": {
+        "url": "https://gismaps.fultoncountyga.gov/arcgispub2/rest/services/PropertyMapViewer/PropertyMapViewer/MapServer",
+        "layer": 11,
+        "fields": {
+            "address": "Address",
+            "zoning_code": "ClassCode",
+            "zoning_desc": "",
+            "owner": "Owner",
+            "owner2": "",
+            "parcel_id": "ParcelID",
+            "mail_addr1": "OwnerAddr1",
+            "mail_addr2": "OwnerAddr2",
+        },
+        "cities": [
+            "Sandy Springs", "Johns Creek", "Milton", "Atlanta",
+            "East Point", "College Park", "Union City", "Fairburn",
+            "Palmetto", "Hapeville", "Chattahoochee Hills", "Mountain Park",
+        ],
+    },
 }
 
 
@@ -187,14 +207,22 @@ def lookup_property(address, api_key=None):
 
 
 def _query_arcgis(street, city):
-    """Query city ArcGIS FeatureServer for property/zoning data."""
+    """Query city or county ArcGIS for property/zoning data."""
     # Normalize city name
     city_clean = city.strip().title()
 
-    if city_clean not in ARCGIS_ENDPOINTS:
-        return None
+    # Try city-specific endpoint first
+    config = ARCGIS_ENDPOINTS.get(city_clean)
 
-    config = ARCGIS_ENDPOINTS[city_clean]
+    # If no city endpoint, try county-level endpoints
+    if not config:
+        for county_name, county_config in COUNTY_ARCGIS_ENDPOINTS.items():
+            if city_clean in county_config.get("cities", []):
+                config = county_config
+                break
+
+    if not config:
+        return None
     url = f"{config['url']}/{config['layer']}/query"
     fields = config["fields"]
 
