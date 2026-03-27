@@ -105,10 +105,54 @@ generate_reports = st.checkbox("Generate PDF reports", value=False)
 run_button = st.button("Research Addresses", type="primary", use_container_width=True)
 
 
+def _normalize_address(addr):
+    """Normalize address formatting so users don't have to be exact."""
+    import re
+    addr = addr.strip()
+    # Fix common abbreviation variations
+    replacements = {
+        r'\bParkway\b': 'Pkwy', r'\bPkwy\b': 'Pkwy', r'\bPky\b': 'Pkwy',
+        r'\bStreet\b': 'St', r'\bDrive\b': 'Dr', r'\bAvenue\b': 'Ave',
+        r'\bBoulevard\b': 'Blvd', r'\bRoad\b': 'Rd', r'\bLane\b': 'Ln',
+        r'\bCircle\b': 'Cir', r'\bCourt\b': 'Ct', r'\bPlace\b': 'Pl',
+        r'\bHighway\b': 'Hwy', r'\bTerrace\b': 'Ter', r'\bTrail\b': 'Trl',
+    }
+    for pattern, repl in replacements.items():
+        addr = re.sub(pattern, repl, addr, flags=re.IGNORECASE)
+
+    # Split compound words: "Northpoint" → "North Point", "Windward" stays
+    # Only split if it starts with North/South/East/West
+    addr = re.sub(r'\b(North|South|East|West)(point|view|park|lake|ridge|wood|creek)\b',
+                  lambda m: m.group(1) + ' ' + m.group(2).title(), addr, flags=re.IGNORECASE)
+
+    # Ensure proper capitalization for each part
+    parts = addr.split(',')
+    normalized = []
+    for i, part in enumerate(parts):
+        part = part.strip()
+        if i == 0:
+            # Street address — title case but keep directional caps
+            part = part.title()
+        elif i == 1:
+            # City — title case
+            part = part.strip().title()
+        else:
+            # State/zip — uppercase state
+            part = part.strip().upper()
+        normalized.append(part)
+
+    # If no comma (just street), return as-is with title case
+    if len(normalized) == 1:
+        return normalized[0]
+
+    return ', '.join(normalized)
+
+
 # === Run Research ===
 if run_button:
-    # Parse addresses
-    addresses = [line.strip() for line in address_text.strip().splitlines() if line.strip()]
+    # Parse and normalize addresses
+    raw_addresses = [line.strip() for line in address_text.strip().splitlines() if line.strip()]
+    addresses = [_normalize_address(a) for a in raw_addresses]
 
     if not addresses:
         st.warning("Please enter at least one address.")
