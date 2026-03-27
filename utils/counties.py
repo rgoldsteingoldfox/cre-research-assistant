@@ -69,6 +69,68 @@ COUNTY_SEARCH_TEMPLATES = {
     "Forsyth": "Forsyth County GA tax assessor property",
 }
 
+# County-specific qPublic property search (free, no login required)
+COUNTY_QPUBLIC_URLS = {
+    "Fulton": "https://qpublic.schneidercorp.com/Application.aspx?App=FultonCountyGA&Layer=Parcels&PageType=Search",
+    "Cobb": "https://qpublic.schneidercorp.com/Application.aspx?App=CobbCountyGA&Layer=Parcels&PageType=Search",
+    "DeKalb": "https://qpublic.schneidercorp.com/Application.aspx?App=DeKalbCountyGA&Layer=Parcels&PageType=Search",
+    "Gwinnett": "https://qpublic.schneidercorp.com/Application.aspx?App=GwinnettCountyGA&Layer=Parcels&PageType=Search",
+    "Cherokee": "https://qpublic.schneidercorp.com/Application.aspx?App=CherokeeCountyGA&Layer=Parcels&PageType=Search",
+    "Forsyth": "https://qpublic.schneidercorp.com/Application.aspx?App=ForsythCountyGA&Layer=Parcels&PageType=Search",
+}
+
+# City-to-Municode slug mapping (for municipal code / zoning ordinance lookups)
+CITY_MUNICODE_SLUGS = {
+    "Atlanta": "atlanta",
+    "Alpharetta": "alpharetta",
+    "Roswell": "roswell",
+    "Milton": "milton",
+    "Johns Creek": "johns_creek",
+    "Sandy Springs": "sandy_springs",
+    "Dunwoody": "dunwoody",
+    "Brookhaven": "brookhaven",
+    "Marietta": "marietta",
+    "Smyrna": "smyrna",
+    "Kennesaw": "kennesaw",
+    "Acworth": "acworth",
+    "Woodstock": "woodstock",
+    "Canton": "canton",
+    "Cumming": "cumming",
+    "Duluth": "duluth",
+    "Lawrenceville": "lawrenceville",
+    "Suwanee": "suwanee",
+    "Norcross": "norcross",
+    "Peachtree Corners": "peachtree_corners",
+    "Decatur": "decatur",
+    "Tucker": "tucker",
+    "Stonecrest": "stonecrest",
+    "East Point": "east_point",
+    "College Park": "college_park",
+    "Union City": "union_city",
+    "Fairburn": "fairburn",
+    "Palmetto": "palmetto",
+    "Hapeville": "hapeville",
+    "Chamblee": "chamblee",
+    "Doraville": "doraville",
+    "Clarkston": "clarkston",
+    "Avondale Estates": "avondale_estates",
+    "Pine Lake": "pine_lake",
+    "Lithonia": "lithonia",
+    "Powder Springs": "powder_springs",
+    "Austell": "austell",
+    "Mableton": "mableton",
+    "Holly Springs": "holly_springs",
+    "Ball Ground": "ball_ground",
+    "Waleska": "waleska",
+    "Mountain Park": "mountain_park",
+}
+
+# GA Secretary of State business search (for LLC/entity lookups)
+GA_SOS_BUSINESS_SEARCH = "https://ecorp.sos.ga.gov/BusinessSearch"
+
+# GSCCCA deed search (for property deed/grantor-grantee history)
+GSCCCA_DEED_SEARCH = "https://search.gsccca.org/RealEstate/"
+
 
 def detect_county(address):
     """Extract zip code from address and map to county."""
@@ -91,3 +153,28 @@ def get_property_search_url(address):
         url = f"https://www.google.com/search?q={quote_plus(query)}"
         return county, url
     return county, None
+
+
+def get_qpublic_url(address):
+    """Get the qPublic property search URL for this address's county."""
+    county = detect_county(address)
+    return COUNTY_QPUBLIC_URLS.get(county, "")
+
+
+def get_municode_url(city):
+    """Get the Municode library URL for a city's municipal code / zoning ordinances."""
+    city_clean = city.strip().title()
+    slug = CITY_MUNICODE_SLUGS.get(city_clean, "")
+    if slug:
+        return f"https://library.municode.com/ga/{slug}"
+    return ""
+
+
+def get_ga_sos_url():
+    """Get the GA Secretary of State business search URL."""
+    return GA_SOS_BUSINESS_SEARCH
+
+
+def get_gsccca_url():
+    """Get the GSCCCA deed search URL."""
+    return GSCCCA_DEED_SEARCH

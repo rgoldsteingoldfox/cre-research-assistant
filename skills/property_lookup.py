@@ -34,6 +34,8 @@ ARCGIS_ENDPOINTS = {
             "owner": "Owner",
             "owner2": "",
             "parcel_id": "ParcelID",
+            "mail_addr1": "OwnerAddr1",
+            "mail_addr2": "OwnerAddr2",
         },
     },
     # Cities with confirmed ArcGIS endpoints but needing spatial queries (future):
@@ -54,7 +56,7 @@ def lookup_property(address, api_key=None):
         return cached
 
     from urllib.parse import quote_plus
-    from utils.counties import detect_county, get_property_search_url
+    from utils.counties import detect_county, get_property_search_url, get_qpublic_url, get_ga_sos_url, get_gsccca_url
 
     result = {
         "property_owner": "",
@@ -81,12 +83,20 @@ def lookup_property(address, api_key=None):
     if assessor_url:
         result["assessor_link"] = assessor_url
 
+    # Direct lookup links
+    qpublic_url = get_qpublic_url(address)
+    if qpublic_url:
+        result["qpublic_link"] = qpublic_url
+    result["ga_sos_link"] = get_ga_sos_url()
+    result["gsccca_link"] = get_gsccca_url()
+
     # === Strategy 1: Try ArcGIS direct lookup (free, instant, accurate) ===
     arcgis_result = _query_arcgis(street, city)
     if arcgis_result:
         result["property_owner"] = arcgis_result.get("owner", "")
         result["zoning"] = arcgis_result.get("zoning", "")
         result["parcel_id"] = arcgis_result.get("parcel_id", "")
+        result["owner_mail_address"] = arcgis_result.get("owner_mail_address", "")
         result["data_source"] = arcgis_result.get("source", "ArcGIS")
 
         # Use Haiku to interpret what the zoning allows
@@ -129,6 +139,34 @@ def lookup_property(address, api_key=None):
             result["secondary_contacts"] = _search_secondary_contacts(
                 owner, address, serpapi_key, anthropic_key
             )
+
+        # === LLC lookup: find the person behind the entity ===
+        # Trigger if owner looks like an LLC/Corp/Trust/entity (not an individual name)
+        if _looks_like_entity(owner):
+            from skills.llc_lookup import lookup_llc
+            print(f"  Looking up LLC: {owner}...")
+            llc_data = lookup_llc(owner, mail_address=result.get("owner_mail_address", ""))
+
+            # === Mailing address reverse lookup ===
+            # If SOS/LLC search didn't find the person, and we have a mailing
+            # address, search for who lives there — that's usually the principal.
+            mail_addr = result.get("owner_mail_address", "")
+            if not llc_data.get("person_name") and mail_addr:
+                serpapi_key2 = api_key or os.environ.get("SERPAPI_KEY", "")
+                anthropic_key2 = os.environ.get("ANTHROPIC_API_KEY", "")
+                if serpapi_key2 and anthropic_key2:
+                    print(f"  Reverse-looking up mailing address: {mail_addr}...")
+                    person = _reverse_lookup_mailing_address(
+                        mail_addr, owner, serpapi_key2, anthropic_key2
+                    )
+                    if person.get("person_name"):
+                        llc_data["person_name"] = person["person_name"]
+                    if person.get("background"):
+                        llc_data["background"] = person["background"]
+                    if person.get("principal_address") and not llc_data.get("principal_address"):
+                        llc_data["principal_address"] = mail_addr
+
+            result["llc_details"] = llc_data
 
     set_cached(CACHE_NAME, cache_key, result)
     return result
@@ -180,10 +218,16 @@ def _query_arcgis(street, city):
 
     parcel_id = (attrs.get(fields.get("parcel_id", ""), "") or "").strip()
 
+    # Owner mailing address (where tax bills go — often the owner's actual address)
+    mail_addr1 = (attrs.get(fields.get("mail_addr1", ""), "") or "").strip()
+    mail_addr2 = (attrs.get(fields.get("mail_addr2", ""), "") or "").strip()
+    mail_address = ", ".join(p for p in [mail_addr1, mail_addr2] if p)
+
     return {
         "owner": owner,
         "zoning": zoning,
         "parcel_id": parcel_id,
+        "owner_mail_address": mail_address,
         "source": f"ArcGIS ({city_clean})",
     }
 
@@ -467,3 +511,103 @@ def _search_secondary_contacts(owner_entity, address, serpapi_key, anthropic_key
         print(f"    (Secondary contact error: {e})")
 
     return result
+
+
+def _reverse_lookup_mailing_address(mail_address, entity_name, serpapi_key, anthropic_key):
+    """
+    When an LLC's SOS lookup fails, search for who lives at the tax mailing
+    address. Private investors usually mail taxes to their home — the resident
+    at that address is almost always the LLC principal.
+    """
+    result = {"person_name": "", "background": ""}
+
+    # Parse street from mailing address
+    parts = [p.strip() for p in mail_address.split(",")]
+    street = parts[0] if parts else mail_address
+
+    queries = [
+        f'"{street}" property owner OR resident OR homeowner',
+        f'"{street}" "{parts[1].strip()}" owner' if len(parts) > 1 else f'"{street}" owner',
+    ]
+
+    all_snippets = []
+    for query in queries:
+        params = {
+            "q": query,
+            "api_key": serpapi_key,
+            "engine": "google",
+            "num": 5,
+        }
+        try:
+            resp = requests.get(SERPAPI_URL, params=params, timeout=10)
+            data = resp.json()
+        except Exception:
+            continue
+
+        for r in data.get("organic_results", [])[:4]:
+            text_parts = []
+            if r.get("title"):
+                text_parts.append(r["title"])
+            if r.get("snippet"):
+                text_parts.append(r["snippet"])
+            source = r.get("displayed_link", "")
+            if text_parts:
+                all_snippets.append(f"[{source}] {' — '.join(text_parts)}")
+
+    if not all_snippets:
+        return result
+
+    snippet_text = "\n".join(all_snippets)
+
+    try:
+        client = anthropic.Anthropic(api_key=anthropic_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"I'm looking for the person who lives at: {mail_address}\n"
+                    f"This address receives tax mail for the commercial property entity "
+                    f"\"{entity_name}\" — so the resident is likely the LLC principal.\n\n"
+                    f"Below are Google search results:\n{snippet_text}\n\n"
+                    f"Extract:\n"
+                    f"1. Person name(s) who own or live at this residential address\n"
+                    f"2. Any background info (family, business ties, other holdings)\n\n"
+                    f"Return in this exact format:\n"
+                    f"PERSON: [name(s)]\n"
+                    f"BACKGROUND: [brief background or UNKNOWN]\n"
+                    f"No other text."
+                ),
+            }],
+        )
+        text = message.content[0].text.strip()
+        for line in text.split("\n"):
+            line = line.strip()
+            if line.startswith("PERSON:"):
+                val = line[7:].strip()
+                if val and val != "UNKNOWN" and len(val) < 100:
+                    result["person_name"] = val
+            elif line.startswith("BACKGROUND:"):
+                val = line[11:].strip()
+                if val and val != "UNKNOWN" and len(val) < 300:
+                    result["background"] = val
+    except Exception as e:
+        print(f"    (Mailing address reverse lookup error: {e})")
+
+    return result
+
+
+def _looks_like_entity(name):
+    """Check if a property owner name looks like an LLC/Corp/Trust rather than a person."""
+    if not name:
+        return False
+    entity_indicators = [
+        "LLC", "L.L.C.", "INC", "CORP", "LP", "L.P.", "LTD",
+        "TRUST", "PARTNERS", "PARTNERSHIP", "HOLDINGS", "GROUP",
+        "PROPERTIES", "REALTY", "INVESTMENTS", "ASSOCIATES",
+        "VENTURES", "CAPITAL", "MANAGEMENT", "DEVELOPMENT",
+        "ENTERPRISES", "FUND", "FOUNDATION",
+    ]
+    name_upper = name.upper()
+    return any(indicator in name_upper for indicator in entity_indicators)

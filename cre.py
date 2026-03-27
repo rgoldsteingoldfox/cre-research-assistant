@@ -89,7 +89,7 @@ def interactive_mode(businesses, city):
     return research_data
 
 
-def property_lookup_mode(addresses, csv_path=None):
+def property_lookup_mode(addresses, csv_path=None, generate_reports=False):
     """Look up property owner + zoning for a list of addresses."""
     from utils.output import DIVIDER, THIN_DIVIDER
     import csv
@@ -111,6 +111,16 @@ def property_lookup_mode(addresses, csv_path=None):
         zoning_uses = prop.get("zoning_uses", "")
         parcel = prop.get("parcel_id", "")
         source = prop.get("data_source", "")
+
+        # Flatten LLC details for CSV export
+        llc = prop.get("llc_details", {})
+        prop["llc_person"] = llc.get("person_name", "")
+        prop["llc_registered_agent"] = llc.get("registered_agent", "")
+        prop["llc_principal_address"] = llc.get("principal_address", "")
+        prop["llc_phone"] = llc.get("phone", "")
+        prop["llc_email"] = llc.get("email", "")
+        prop["llc_linkedin"] = llc.get("linkedin", "")
+        prop["llc_filing_status"] = llc.get("filing_status", "")
 
         results.append({"address": addr, **prop})
 
@@ -135,6 +145,9 @@ def property_lookup_mode(addresses, csv_path=None):
         print(f"  {THIN_DIVIDER}")
         if owner:
             print(f"  Property Owner: {owner}")
+        mail_addr = r.get("owner_mail_address", "")
+        if mail_addr:
+            print(f"  Tax Mailing:    {mail_addr}")
         if zoning:
             print(f"  Zoning:         {zoning}")
         if zoning_uses:
@@ -143,6 +156,31 @@ def property_lookup_mode(addresses, csv_path=None):
             print(f"  Parcel ID:      {parcel}")
         if r.get("management_search"):
             print(f"  Owner search:   {r['management_search']}")
+        # LLC details
+        llc = r.get("llc_details", {})
+        if llc and (llc.get("person_name") or llc.get("registered_agent")):
+            print(f"  --- Person Behind LLC ---")
+            if llc.get("person_name"):
+                print(f"  Person:           {llc['person_name']}")
+            if llc.get("registered_agent") and llc["registered_agent"] != llc.get("person_name"):
+                print(f"  Registered Agent: {llc['registered_agent']}")
+            if llc.get("principal_address"):
+                print(f"  Principal Office: {llc['principal_address']}")
+            if llc.get("filing_status"):
+                print(f"  Filing Status:    {llc['filing_status']}")
+            if llc.get("phone"):
+                print(f"  Phone:            {llc['phone']}")
+            if llc.get("email"):
+                print(f"  Email:            {llc['email']}")
+            if llc.get("linkedin"):
+                print(f"  LinkedIn:         {llc['linkedin']}")
+
+        if r.get("qpublic_link"):
+            print(f"  qPublic (owner):  {r['qpublic_link']}")
+        if r.get("ga_sos_link"):
+            print(f"  GA SOS (LLC):     {r['ga_sos_link']}")
+        if r.get("gsccca_link"):
+            print(f"  GSCCCA (deeds):   {r['gsccca_link']}")
         if not owner and not zoning:
             print(f"  No data found — try the county assessor:")
             if r.get("assessor_link"):
@@ -151,8 +189,12 @@ def property_lookup_mode(addresses, csv_path=None):
     # CSV export
     if csv_path:
         fieldnames = [
-            "address", "property_owner", "zoning", "zoning_uses", "parcel_id",
+            "address", "property_owner", "owner_mail_address",
+            "zoning", "zoning_uses", "parcel_id",
+            "llc_person", "llc_registered_agent", "llc_principal_address",
+            "llc_phone", "llc_email", "llc_linkedin", "llc_filing_status",
             "data_source", "management_search", "loopnet_link", "assessor_link",
+            "qpublic_link", "ga_sos_link", "gsccca_link",
         ]
         with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -160,6 +202,15 @@ def property_lookup_mode(addresses, csv_path=None):
             for r in results:
                 writer.writerow(r)
         print(f"\n  CSV saved to: {csv_path}")
+
+    # PDF report generation
+    if generate_reports:
+        from utils.report import generate_report
+        report_dir = os.path.join(os.path.dirname(__file__), "reports")
+        print(f"\n  Generating PDF reports...")
+        for r in results:
+            filepath = generate_report(r, r["address"], output_dir=report_dir)
+            print(f"  Report saved: {filepath}")
 
     found = sum(1 for r in results if r.get("property_owner"))
     zoned = sum(1 for r in results if r.get("zoning"))
@@ -175,6 +226,7 @@ def main():
     parser.add_argument("--type", help="Business type (e.g., 'coffee shops')", metavar="TYPE")
     parser.add_argument("--location", help="Location (e.g., 'Roswell, GA')", metavar="LOC")
     parser.add_argument("--addresses", help="Property lookup mode: file path or semicolon-separated addresses", metavar="ADDRS")
+    parser.add_argument("--report", action="store_true", help="Generate PDF report for each property")
     args = parser.parse_args()
 
     # === Property Lookup Mode ===
@@ -190,7 +242,7 @@ def main():
             print("  No addresses found. Exiting.")
             return
 
-        property_lookup_mode(addresses, args.csv)
+        property_lookup_mode(addresses, args.csv, args.report)
         return
 
     # === Tenant Research Mode ===

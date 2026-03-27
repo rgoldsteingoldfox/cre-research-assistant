@@ -1,14 +1,17 @@
 """Generate research links for zoning, property ownership, and owner search."""
 
 from urllib.parse import quote_plus
-from utils.counties import detect_county, get_property_search_url
+from utils.counties import (
+    detect_county, get_property_search_url, get_qpublic_url,
+    get_municode_url, get_ga_sos_url, get_gsccca_url,
+)
 
 
 def generate_links(business_name, address, city=""):
     """
     Generate all research links for a business.
     Returns dict with owner_search, zoning_search, property_search,
-    county, and county_gis URLs.
+    county, county_gis, qpublic, municode, ga_sos, gsccca URLs.
     """
     links = {}
     search_city = city or _extract_city(address)
@@ -38,6 +41,24 @@ def generate_links(business_name, address, city=""):
     links["county"] = county
     if gis_url:
         links["county_gis"] = gis_url
+
+    # === Direct lookup links ===
+
+    # qPublic — free county property search (owner of record, no login)
+    qpublic_url = get_qpublic_url(address)
+    if qpublic_url:
+        links["qpublic"] = qpublic_url
+
+    # Municode — municipal code / zoning ordinance for the city
+    municode_url = get_municode_url(search_city)
+    if municode_url:
+        links["municode"] = municode_url
+
+    # GA Secretary of State — LLC/entity registration lookup
+    links["ga_sos"] = get_ga_sos_url()
+
+    # GSCCCA — deed search (grantor/grantee history)
+    links["gsccca"] = get_gsccca_url()
 
     return links
 

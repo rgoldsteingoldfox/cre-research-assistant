@@ -82,6 +82,9 @@ def print_deep_dive(biz, contacts, links, property_data=None):
         else:
             print(f"\n  Not found")
 
+        if property_data.get("owner_mail_address"):
+            print(f"  Tax Mailing Addr: {property_data['owner_mail_address']}")
+
         if property_data.get("zoning"):
             print(f"  Zoning: {property_data['zoning']}")
         if property_data.get("zoning_uses"):
@@ -105,6 +108,27 @@ def print_deep_dive(biz, contacts, links, property_data=None):
                 print(f"  Phone:         {sec['phone']}")
             if sec.get("email"):
                 print(f"  Email:         {sec['email']}")
+        # LLC details (person behind the entity)
+        llc = property_data.get("llc_details", {})
+        if llc and (llc.get("person_name") or llc.get("registered_agent")):
+            print(f"\n  {THIN_DIVIDER}")
+            print("  PERSON BEHIND THE LLC")
+            print(f"  {THIN_DIVIDER}")
+
+            if llc.get("person_name"):
+                print(f"\n  >>> {llc['person_name']} <<<")
+            if llc.get("registered_agent") and llc["registered_agent"] != llc.get("person_name"):
+                print(f"  Registered Agent: {llc['registered_agent']}")
+            if llc.get("principal_address"):
+                print(f"  Principal Office: {llc['principal_address']}")
+            if llc.get("filing_status"):
+                print(f"  Filing Status:    {llc['filing_status']}")
+            if llc.get("phone"):
+                print(f"  Phone:            {llc['phone']}")
+            if llc.get("email"):
+                print(f"  Email:            {llc['email']}")
+            if llc.get("linkedin"):
+                print(f"  LinkedIn:         {llc['linkedin']}")
     else:
         print("\n  (Property lookup not run)")
 
@@ -133,6 +157,23 @@ def print_deep_dive(biz, contacts, links, property_data=None):
     if links.get("county"):
         print(f"  County:            {links['county']}")
 
+    # === DIRECT LOOKUP LINKS ===
+    has_direct = any(links.get(k) for k in ["qpublic", "municode", "ga_sos", "gsccca"])
+    if has_direct or (property_data and property_data.get("qpublic_link")):
+        print(f"\n  {THIN_DIVIDER}")
+        print("  DIRECT LOOKUP LINKS")
+        print(f"  {THIN_DIVIDER}")
+
+        qpublic = (property_data or {}).get("qpublic_link") or links.get("qpublic", "")
+        if qpublic:
+            print(f"\n  qPublic (owner):   {qpublic}")
+        if links.get("municode"):
+            print(f"  Municode (zoning): {links['municode']}")
+        if links.get("ga_sos"):
+            print(f"  GA SOS (LLC):      {links['ga_sos']}")
+        if links.get("gsccca"):
+            print(f"  GSCCCA (deeds):    {links['gsccca']}")
+
     print()
 
 
@@ -141,9 +182,12 @@ def export_csv(filepath, businesses, research_data=None):
     fieldnames = [
         "name", "address", "phone", "website",
         "business_owner", "emails_found", "phones_found",
-        "property_owner", "zoning", "zoning_uses", "parcel_id",
+        "property_owner", "owner_mail_address", "zoning", "zoning_uses", "parcel_id",
+        "llc_person", "llc_registered_agent", "llc_principal_address",
+        "llc_phone", "llc_email", "llc_linkedin", "llc_filing_status",
         "mgmt_company", "leasing_contact", "mgmt_phone", "mgmt_email",
         "loopnet_link", "assessor_link",
+        "qpublic_link", "municode_link", "ga_sos_link", "gsccca_link",
         "county",
         "owner_search_link", "property_search_link",
         "leasing_search_link", "property_manager_search_link",
@@ -173,6 +217,7 @@ def export_csv(filepath, businesses, research_data=None):
                 row["emails_found"] = " | ".join(contacts.get("emails", []))
                 row["phones_found"] = " | ".join(contacts.get("phones", []))
                 row["property_owner"] = prop.get("property_owner", "")
+                row["owner_mail_address"] = prop.get("owner_mail_address", "")
                 row["zoning"] = prop.get("zoning", "")
                 row["zoning_uses"] = prop.get("zoning_uses", "")
                 row["parcel_id"] = prop.get("parcel_id", "")
@@ -180,8 +225,20 @@ def export_csv(filepath, businesses, research_data=None):
                 row["leasing_contact"] = sec.get("leasing_contact", "")
                 row["mgmt_phone"] = sec.get("phone", "")
                 row["mgmt_email"] = sec.get("email", "")
+                llc = prop.get("llc_details", {})
+                row["llc_person"] = llc.get("person_name", "")
+                row["llc_registered_agent"] = llc.get("registered_agent", "")
+                row["llc_principal_address"] = llc.get("principal_address", "")
+                row["llc_phone"] = llc.get("phone", "")
+                row["llc_email"] = llc.get("email", "")
+                row["llc_linkedin"] = llc.get("linkedin", "")
+                row["llc_filing_status"] = llc.get("filing_status", "")
                 row["loopnet_link"] = prop.get("loopnet_link", "")
                 row["assessor_link"] = prop.get("assessor_link", "")
+                row["qpublic_link"] = prop.get("qpublic_link", "") or links.get("qpublic", "")
+                row["municode_link"] = links.get("municode", "")
+                row["ga_sos_link"] = links.get("ga_sos", "")
+                row["gsccca_link"] = links.get("gsccca", "")
                 row["county"] = links.get("county", "")
                 row["owner_search_link"] = links.get("owner_search", "")
                 row["property_search_link"] = links.get("property_search", "")
