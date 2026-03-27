@@ -16,6 +16,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
+# Load Streamlit Cloud secrets into env vars (for deployment)
+try:
+    for key in ["GOOGLE_API_KEY", "SERPAPI_KEY", "ANTHROPIC_API_KEY"]:
+        if key in st.secrets and not os.environ.get(key):
+            os.environ[key] = st.secrets[key]
+except Exception:
+    pass  # Not on Streamlit Cloud, using .env instead
+
 from skills.property_lookup import lookup_property
 from skills.llc_lookup import lookup_llc
 from utils.report import generate_report
