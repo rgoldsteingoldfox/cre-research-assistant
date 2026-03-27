@@ -199,8 +199,26 @@ def _query_arcgis(street, city):
     fields = config["fields"]
 
     # Build address search — use LIKE for fuzzy matching
-    # Strip "Street", "St", "Road", "Rd" etc. to improve matching
+    # Strip suite numbers and normalize common abbreviations
     search_addr = street.split(" Suite")[0].split(" Ste")[0].split(" #")[0].strip()
+
+    # Normalize street type variations so users don't have to be exact
+    _ABBREVS = {
+        "Parkway": "Pkwy", "Pkwy": "Pkwy", "Pky": "Pkwy",
+        "Street": "St", "Drive": "Dr", "Avenue": "Ave",
+        "Boulevard": "Blvd", "Road": "Rd", "Lane": "Ln",
+        "Circle": "Cir", "Court": "Ct", "Place": "Pl",
+        "Highway": "Hwy", "Terrace": "Ter", "Trail": "Trl",
+        "Way": "Way", "Point": "Pt",
+    }
+    # Also handle compound words like "Northpoint" vs "North Point"
+    # Try to extract just the street number + first few words for a broader LIKE match
+    words = search_addr.split()
+    # Remove the last word if it's a street type — let LIKE handle it
+    if len(words) > 2 and words[-1].title() in _ABBREVS:
+        search_addr = " ".join(words[:-1])
+    elif len(words) > 2 and words[-1].title().rstrip(".,") in _ABBREVS:
+        search_addr = " ".join(words[:-1])
 
     params = {
         "where": f"{fields['address']} LIKE '{search_addr}%'",

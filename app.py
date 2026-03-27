@@ -58,6 +58,7 @@ st.markdown("""
 # === Header ===
 st.title("CRE Research Assistant")
 st.markdown("Paste property addresses below to get owner, zoning, LLC, and contact intelligence.")
+st.caption("Use full addresses with city and state — e.g. **7900 North Point Pkwy, Alpharetta, GA 30005**")
 st.divider()
 
 
