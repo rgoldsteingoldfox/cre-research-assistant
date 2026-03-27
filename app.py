@@ -16,18 +16,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
-# Load API keys — try Streamlit secrets first, then .env, then defaults
-_DEFAULTS = {
-    "GOOGLE_API_KEY": "AIzaSyBwsjViZ4w6P4P2iiqqFHVFRPRB-dJEXaE",
-    "SERPAPI_KEY": "a456c2b8df3f68c9c7f41ee5016e4b4c53dd9bc8f5fd815be8c376af1704175c",
-    "ANTHROPIC_API_KEY": "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",
-}
-for key, default in _DEFAULTS.items():
-    if not os.environ.get(key):
-        try:
-            os.environ[key] = st.secrets[key]
-        except Exception:
-            os.environ[key] = default
+# Load API keys — set defaults, then override from secrets if available
+os.environ.setdefault("GOOGLE_API_KEY", "AIzaSyBwsjViZ4w6P4P2iiqqFHVFRPRB-dJEXaE")
+os.environ.setdefault("SERPAPI_KEY", "a456c2b8df3f68c9c7f41ee5016e4b4c53dd9bc8f5fd815be8c376af1704175c")
+os.environ.setdefault("ANTHROPIC_API_KEY", "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")
 
 from skills.property_lookup import lookup_property
 from skills.llc_lookup import lookup_llc
