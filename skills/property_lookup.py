@@ -166,6 +166,20 @@ def lookup_property(address, api_key=None):
                     if person.get("principal_address") and not llc_data.get("principal_address"):
                         llc_data["principal_address"] = mail_addr
 
+            # === Manual enrichment override ===
+            # Check data/enrichments.json for manually researched data
+            enrichment = _get_enrichment(address)
+            if enrichment:
+                llc_override = enrichment.get("llc_override", {})
+                if llc_override.get("person_name"):
+                    llc_data["person_name"] = llc_override["person_name"]
+                if llc_override.get("background"):
+                    llc_data["background"] = llc_override["background"]
+                if llc_override.get("principal_address"):
+                    llc_data["principal_address"] = llc_override["principal_address"]
+                if llc_override.get("source"):
+                    llc_data["enrichment_source"] = llc_override["source"]
+
             result["llc_details"] = llc_data
 
     set_cached(CACHE_NAME, cache_key, result)
@@ -511,6 +525,29 @@ def _search_secondary_contacts(owner_entity, address, serpapi_key, anthropic_key
         print(f"    (Secondary contact error: {e})")
 
     return result
+
+
+def _get_enrichment(address):
+    """Check data/enrichments.json for manually researched data for this address."""
+    import json
+    enrichments_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "enrichments.json")
+    if not os.path.exists(enrichments_path):
+        return None
+    try:
+        with open(enrichments_path, "r") as f:
+            data = json.load(f)
+        # Try exact match first, then fuzzy (street number + first word)
+        if address in data:
+            return data[address]
+        # Fuzzy: match on street number + street name prefix
+        street = address.split(",")[0].strip().upper()
+        for key, val in data.items():
+            key_street = key.split(",")[0].strip().upper()
+            if key_street == street:
+                return val
+        return None
+    except Exception:
+        return None
 
 
 def _reverse_lookup_mailing_address(mail_address, entity_name, serpapi_key, anthropic_key):
