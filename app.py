@@ -58,7 +58,7 @@ st.markdown("""
 # === Header ===
 st.title("CRE Research Assistant")
 st.markdown("Paste property addresses below to get owner, zoning, LLC, and contact intelligence.")
-st.caption("Use full addresses with city and state — e.g. **7900 North Point Pkwy, Alpharetta, GA 30005**")
+st.caption("Use full addresses with city and state — e.g. **2500 Old Milton Pkwy, Alpharetta, GA 30009**")
 st.divider()
 
 
@@ -69,7 +69,7 @@ with col_input:
     address_text = st.text_area(
         "Addresses (one per line)",
         height=180,
-        placeholder="1090 Alpharetta St, Roswell, GA 30075\n585 Atlanta St, Roswell, GA 30075\n7900 North Point Pkwy, Alpharetta, GA 30005",
+        placeholder="2500 Old Milton Pkwy, Alpharetta, GA 30009\n980 Mansell Rd, Roswell, GA 30076\n11720 Amber Park Dr, Alpharetta, GA 30009",
     )
 
 with col_upload:
