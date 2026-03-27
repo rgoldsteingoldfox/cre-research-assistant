@@ -202,23 +202,19 @@ def _query_arcgis(street, city):
     # Strip suite numbers and normalize common abbreviations
     search_addr = street.split(" Suite")[0].split(" Ste")[0].split(" #")[0].strip()
 
-    # Normalize street type variations so users don't have to be exact
-    _ABBREVS = {
-        "Parkway": "Pkwy", "Pkwy": "Pkwy", "Pky": "Pkwy",
-        "Street": "St", "Drive": "Dr", "Avenue": "Ave",
-        "Boulevard": "Blvd", "Road": "Rd", "Lane": "Ln",
-        "Circle": "Cir", "Court": "Ct", "Place": "Pl",
-        "Highway": "Hwy", "Terrace": "Ter", "Trail": "Trl",
-        "Way": "Way", "Point": "Pt",
-    }
-    # Also handle compound words like "Northpoint" vs "North Point"
-    # Try to extract just the street number + first few words for a broader LIKE match
-    words = search_addr.split()
-    # Remove the last word if it's a street type — let LIKE handle it
-    if len(words) > 2 and words[-1].title() in _ABBREVS:
-        search_addr = " ".join(words[:-1])
-    elif len(words) > 2 and words[-1].title().rstrip(".,") in _ABBREVS:
-        search_addr = " ".join(words[:-1])
+    # Use just the street number for matching — handles all variations
+    # "7900 Northpoint Parkway" and "7900 North Point Pkwy" both start with "7900"
+    # The LIKE query with just the number is broad enough to find the right record
+    import re as _re
+    number_match = _re.match(r'^(\d+)', search_addr)
+    if number_match:
+        street_num = number_match.group(1)
+        # Use number + first word of street name for tighter match
+        words = search_addr.split()
+        if len(words) >= 2:
+            # Use number + beginning of second word (handles "Northpoint" vs "North")
+            second_word = words[1][:5]  # First 5 chars of street name
+            search_addr = f"{street_num} {second_word}"
 
     params = {
         "where": f"{fields['address']} LIKE '{search_addr}%'",
