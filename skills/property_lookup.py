@@ -97,6 +97,43 @@ COUNTY_ARCGIS_ENDPOINTS = {
             "Buford", "Dacula", "Grayson", "Loganville",
         ],
     },
+    "DeKalb": {
+        "url": "https://dcgis.dekalbcountyga.gov/hosted/rest/services/Parcels/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "ZONING",
+            "zoning_desc": "CLASSDSCRP",
+            "owner": "OWNERNME1",
+            "owner2": "OWNERNME2",
+            "parcel_id": "PARCELID",
+            "mail_addr1": "PSTLADDRESS",
+            "mail_addr2": "PSTLCITYSTATEZIP",
+        },
+        "cities": [
+            "Dunwoody", "Brookhaven", "Decatur", "Tucker",
+            "Stonecrest", "Chamblee", "Doraville", "Clarkston",
+            "Avondale Estates", "Pine Lake", "Lithonia",
+        ],
+    },
+    "Cherokee": {
+        "url": "https://gis.cherokeecountyga.gov/arcgis/rest/services/MainLayersPRO/MapServer",
+        "layer": 1,
+        "fields": {
+            "address": "Property_Address",
+            "zoning_code": "Zoning",
+            "zoning_desc": "",
+            "owner": "OWNER",
+            "owner2": "",
+            "parcel_id": "PIN",
+            "mail_addr1": "Mailing_Address",
+            "mail_addr2": "Mailing_City",
+        },
+        "cities": [
+            "Woodstock", "Canton", "Holly Springs", "Ball Ground",
+            "Waleska",
+        ],
+    },
 }
 
 
