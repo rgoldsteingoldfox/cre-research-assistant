@@ -125,13 +125,17 @@ def _normalize_address(addr):
     addr = re.sub(r'\b(North|South|East|West)(point|view|park|lake|ridge|wood|creek)\b',
                   lambda m: m.group(1) + ' ' + m.group(2).title(), addr, flags=re.IGNORECASE)
 
+    # If no commas, try to insert them by detecting city/state/zip
+    if ',' not in addr:
+        addr = _insert_commas(addr)
+
     # Ensure proper capitalization for each part
     parts = addr.split(',')
     normalized = []
     for i, part in enumerate(parts):
         part = part.strip()
         if i == 0:
-            # Street address — title case but keep directional caps
+            # Street address — title case
             part = part.title()
         elif i == 1:
             # City — title case
@@ -146,6 +150,68 @@ def _normalize_address(addr):
         return normalized[0]
 
     return ', '.join(normalized)
+
+
+def _insert_commas(addr):
+    """Insert commas into an address that has none, like '3400 w hospital ave Atlanta ga 30341'."""
+    import re
+
+    # Known GA cities (most common metro Atlanta)
+    _CITIES = [
+        "Alpharetta", "Atlanta", "Roswell", "Sandy Springs", "Johns Creek",
+        "Milton", "Dunwoody", "Brookhaven", "Marietta", "Smyrna", "Kennesaw",
+        "Acworth", "Woodstock", "Canton", "Cumming", "Duluth", "Lawrenceville",
+        "Suwanee", "Norcross", "Peachtree Corners", "Decatur", "Tucker",
+        "Stonecrest", "East Point", "College Park", "Union City", "Fairburn",
+        "Chamblee", "Doraville", "Lilburn", "Snellville", "Buford",
+        "Powder Springs", "Austell", "Mableton", "Holly Springs",
+        "Hapeville", "Palmetto", "Dacula", "Grayson", "Loganville",
+    ]
+
+    # State abbreviations
+    _STATES = ["GA", "AL", "TN", "FL", "SC", "NC"]
+
+    addr_upper = addr.upper()
+
+    # First find the state abbreviation — that anchors everything
+    state_match = re.search(r'\b(GA|AL|TN|FL|SC|NC)\b\s*(\d{5})?', addr, re.IGNORECASE)
+    state_pos = state_match.start() if state_match else len(addr)
+    before_state = addr[:state_pos].strip()
+    state_zip = addr[state_pos:].strip() if state_match else ""
+
+    # Now find the city in the part before the state
+    # Sort cities longest-first so "Sandy Springs" matches before "Sandy"
+    sorted_cities = sorted(_CITIES, key=len, reverse=True)
+    for city in sorted_cities:
+        # Only match city if it appears in the pre-state portion
+        idx = before_state.upper().rfind(city.upper())
+        if idx > 0:
+            street = before_state[:idx].strip()
+            city_part = before_state[idx:].strip()
+            if state_zip:
+                return f"{street}, {city_part}, {state_zip}"
+            return f"{street}, {city_part}"
+
+    # Fallback: look for state abbreviation pattern
+    match = re.search(r'\b(GA|AL|TN|FL|SC|NC)\s*(\d{5})?', addr, re.IGNORECASE)
+    if match:
+        state_start = match.start()
+        # Walk backwards to find where the city starts (after street type)
+        before_state = addr[:state_start].strip()
+        state_zip = addr[state_start:].strip()
+
+        # Try to find where street ends and city begins
+        # Look for common street suffixes
+        street_types = r'\b(St|Rd|Dr|Ave|Blvd|Pkwy|Ln|Cir|Ct|Pl|Hwy|Ter|Trl|Way)\b'
+        suffix_match = re.search(street_types, before_state, re.IGNORECASE)
+        if suffix_match:
+            split_at = suffix_match.end()
+            street = before_state[:split_at].strip()
+            city = before_state[split_at:].strip()
+            if city:
+                return f"{street}, {city}, {state_zip}"
+
+    return addr
 
 
 # === Run Research ===
