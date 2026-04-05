@@ -1,0 +1,25 @@
+{
+  "name": "cre-research-assistant",
+  "version": "1.0.0",
+  "description": "",
+  "main": "testTrestle.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rgoldsteingoldfox/cre-research-assistant.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/rgoldsteingoldfox/cre-research-assistant/issues"
+  },
+  "homepage": "https://github.com/rgoldsteingoldfox/cre-research-assistant#readme",
+  "dependencies": {
+    "axios": "^1.14.0",
+    "dotenv": "^17.4.1"
+  }
+}
