@@ -24,6 +24,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-api03-QOiAIEScw5PyBOxfVfdFkLV
 from skills.property_lookup import lookup_property
 from skills.llc_lookup import lookup_llc
 from skills.trestle_lookup import trestle_lookup
+from utils.contact_ranking import rank_contacts
 from utils.report import generate_report
 
 
@@ -298,6 +299,9 @@ if run_button:
             )
         prop["trestle_residents"] = trestle_residents
 
+        # Rank all contacts across sources
+        prop["ranked_contacts"] = rank_contacts(prop)
+
         results.append({"address": addr, **prop})
 
     progress.progress(1.0, text="Done!")
@@ -359,60 +363,38 @@ if "results" in st.session_state and st.session_state["results"]:
                     st.markdown(f"- **Source:** {source}")
 
             with col_right:
-                # LLC details
-                if r.get("llc_person") or r.get("llc_registered_agent"):
-                    st.markdown("**Person Behind the LLC**")
-                    if r.get("llc_person"):
-                        st.markdown(f"- **Person:** {r['llc_person']}")
-                    if r.get("llc_registered_agent") and r["llc_registered_agent"] != r.get("llc_person"):
-                        st.markdown(f"- **Registered Agent:** {r['llc_registered_agent']}")
-                    if r.get("llc_principal_address"):
-                        st.markdown(f"- **Principal Office:** {r['llc_principal_address']}")
-                    if r.get("llc_filing_status"):
-                        st.markdown(f"- **Filing Status:** {r['llc_filing_status']}")
-                    if r.get("llc_phone"):
-                        st.markdown(f"- **Phone:** {r['llc_phone']}")
-                    if r.get("llc_email"):
-                        st.markdown(f"- **Email:** {r['llc_email']}")
-                    if r.get("llc_linkedin"):
-                        st.markdown(f"- **LinkedIn:** [{r['llc_linkedin']}]({r['llc_linkedin']})")
-                    if r.get("llc_background"):
-                        st.markdown(f"- **Background:** {r['llc_background']}")
+                ranked = r.get("ranked_contacts", [])
+                if ranked:
+                    st.markdown("**Ranked Contacts**")
+                    for contact in ranked:
+                        conf = contact["confidence"]
+                        if conf == "HIGH":
+                            badge = '<span class="badge-found">HIGH</span>'
+                        elif conf == "MEDIUM":
+                            badge = '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:4px;font-size:13px;">MEDIUM</span>'
+                        else:
+                            badge = '<span class="badge-missing">LOW</span>'
 
-                # Management / leasing
-                if r.get("mgmt_company") or r.get("leasing_contact"):
-                    st.markdown("**Property Management / Leasing**")
-                    if r.get("mgmt_company"):
-                        st.markdown(f"- **Management Co:** {r['mgmt_company']}")
-                    if r.get("leasing_contact"):
-                        st.markdown(f"- **Leasing Agent:** {r['leasing_contact']}")
-                    if r.get("mgmt_phone"):
-                        st.markdown(f"- **Phone:** {r['mgmt_phone']}")
-                    if r.get("mgmt_email"):
-                        st.markdown(f"- **Email:** {r['mgmt_email']}")
+                        st.markdown(f"{badge} **{contact['name']}**", unsafe_allow_html=True)
+                        st.markdown(f"&nbsp;&nbsp;&nbsp;_{contact['label']}_ — via {contact['source']}", unsafe_allow_html=True)
+                        if contact.get("phone"):
+                            st.markdown(f"- Phone: {contact['phone']}")
+                        if contact.get("email"):
+                            st.markdown(f"- Email: {contact['email']}")
+                        if contact.get("linkedin"):
+                            st.markdown(f"- [LinkedIn]({contact['linkedin']})")
 
-                if not r.get("llc_person") and not r.get("mgmt_company"):
+                    # Show LLC filing details below contacts if available
+                    if r.get("llc_principal_address") or r.get("llc_filing_status"):
+                        st.markdown("---")
+                        st.markdown("**LLC Filing Details**")
+                        if r.get("llc_principal_address"):
+                            st.markdown(f"- **Principal Office:** {r['llc_principal_address']}")
+                        if r.get("llc_filing_status"):
+                            st.markdown(f"- **Filing Status:** {r['llc_filing_status']}")
+                else:
                     st.markdown("**Contacts**")
-                    st.markdown("_No additional contacts found_")
-
-            # Trestle resident data
-            trestle = r.get("trestle_residents", [])
-            if trestle:
-                st.markdown("**Trestle Reverse Address — Current Residents**")
-                show_residents = trestle[:5]
-                res_cols = st.columns(min(len(show_residents), 3))
-                for idx, resident in enumerate(show_residents):
-                    with res_cols[idx % 3]:
-                        name = resident.get("name", "N/A")
-                        st.markdown(f"**{name}**")
-                        for p in resident.get("phones", [])[:2]:
-                            st.markdown(f"- {p['number']} ({p['type']})")
-                        for e in resident.get("emails", [])[:2]:
-                            st.markdown(f"- {e}")
-                        if not resident.get("phones") and not resident.get("emails"):
-                            st.markdown("_No contact info_")
-                if len(trestle) > 5:
-                    st.caption(f"+ {len(trestle) - 5} more residents")
+                    st.markdown("_No contacts found_")
 
             # Research links row
             link_cols = st.columns(5)
@@ -436,6 +418,8 @@ if "results" in st.session_state and st.session_state["results"]:
     # CSV download
     csv_fields = [
         "address", "property_owner", "owner_mail_address",
+        "best_contact", "contact_confidence", "contact_label",
+        "best_phone", "best_email",
         "zoning", "zoning_uses", "parcel_id",
         "llc_person", "llc_registered_agent", "llc_principal_address",
         "llc_phone", "llc_email", "llc_linkedin", "llc_filing_status",
@@ -447,6 +431,15 @@ if "results" in st.session_state and st.session_state["results"]:
     writer = csv.DictWriter(csv_buffer, fieldnames=csv_fields, extrasaction="ignore")
     writer.writeheader()
     for r in results:
+        # Flatten best ranked contact into CSV row
+        ranked = r.get("ranked_contacts", [])
+        if ranked:
+            best = ranked[0]
+            r["best_contact"] = best["name"]
+            r["contact_confidence"] = best["confidence"]
+            r["contact_label"] = best["label"]
+            r["best_phone"] = best.get("phone", "")
+            r["best_email"] = best.get("email", "")
         writer.writerow(r)
 
     dl_col1.download_button(
