@@ -19,9 +19,10 @@ async function main() {
     return;
   }
 
-  console.log(`\nFound ${results.length} resident(s):\n`);
+  const show = results.slice(0, 5);
+  console.log(`\nFound ${results.length} resident(s), showing first ${show.length}:\n`);
 
-  results.forEach((person, i) => {
+  show.forEach((person, i) => {
     console.log(`--- Resident ${i + 1} ---`);
     console.log(`  Name:   ${person.name || 'N/A'}`);
 
