@@ -3,10 +3,10 @@ const { lookupAddress } = require('./trestleService');
 
 async function main() {
   const results = await lookupAddress({
-    street_line_1: '1600 Pennsylvania Ave NW',
+    street: '1600 Pennsylvania Ave NW',
     city: 'Washington',
-    state_code: 'DC',
-    postal_code: '20500'
+    state: 'DC',
+    zip: '20500'
   });
 
   if (!results) {
