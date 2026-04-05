@@ -23,6 +23,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-api03-QOiAIEScw5PyBOxfVfdFkLV
 
 from skills.property_lookup import lookup_property
 from skills.llc_lookup import lookup_llc
+from skills.trestle_lookup import trestle_lookup
 from utils.report import generate_report
 
 
@@ -152,6 +153,27 @@ def _normalize_address(addr):
     return ', '.join(normalized)
 
 
+def _parse_address_parts(addr):
+    """Parse a normalized address like '2500 Old Milton Pkwy, Alpharetta, GA 30009' into parts."""
+    import re
+    parts = [p.strip() for p in addr.split(",")]
+    if len(parts) < 2:
+        return None
+    street = parts[0]
+    city = parts[1] if len(parts) >= 2 else ""
+    state = ""
+    zip_code = ""
+    if len(parts) >= 3:
+        state_zip = parts[2].strip()
+        match = re.match(r'([A-Z]{2})\s*(\d{5})?', state_zip)
+        if match:
+            state = match.group(1)
+            zip_code = match.group(2) or ""
+    if not street or not city:
+        return None
+    return {"street": street, "city": city, "state": state, "zip": zip_code}
+
+
 def _insert_commas(addr):
     """Insert commas into an address that has none, like '3400 w hospital ave Atlanta ga 30341'."""
     import re
@@ -266,6 +288,16 @@ if run_button:
         prop["mgmt_phone"] = sec.get("phone", "")
         prop["mgmt_email"] = sec.get("email", "")
 
+        # Trestle reverse address lookup
+        trestle_residents = []
+        addr_parts = _parse_address_parts(addr)
+        if addr_parts:
+            trestle_residents = trestle_lookup(
+                addr_parts["street"], addr_parts["city"],
+                addr_parts["state"], addr_parts["zip"]
+            )
+        prop["trestle_residents"] = trestle_residents
+
         results.append({"address": addr, **prop})
 
     progress.progress(1.0, text="Done!")
@@ -362,6 +394,25 @@ if "results" in st.session_state and st.session_state["results"]:
                 if not r.get("llc_person") and not r.get("mgmt_company"):
                     st.markdown("**Contacts**")
                     st.markdown("_No additional contacts found_")
+
+            # Trestle resident data
+            trestle = r.get("trestle_residents", [])
+            if trestle:
+                st.markdown("**Trestle Reverse Address — Current Residents**")
+                show_residents = trestle[:5]
+                res_cols = st.columns(min(len(show_residents), 3))
+                for idx, resident in enumerate(show_residents):
+                    with res_cols[idx % 3]:
+                        name = resident.get("name", "N/A")
+                        st.markdown(f"**{name}**")
+                        for p in resident.get("phones", [])[:2]:
+                            st.markdown(f"- {p['number']} ({p['type']})")
+                        for e in resident.get("emails", [])[:2]:
+                            st.markdown(f"- {e}")
+                        if not resident.get("phones") and not resident.get("emails"):
+                            st.markdown("_No contact info_")
+                if len(trestle) > 5:
+                    st.caption(f"+ {len(trestle) - 5} more residents")
 
             # Research links row
             link_cols = st.columns(5)
