@@ -1,6 +1,7 @@
 """
-CRE Research Assistant — Web App
-Streamlit interface for property intelligence research.
+CRE Contact Finder — Web App
+Find the person behind any commercial property in seconds.
+Paste addresses → get owner, LLC principal, phone, email, LinkedIn.
 """
 
 import os
@@ -29,8 +30,8 @@ from utils.report import generate_report
 
 # === Page Config ===
 st.set_page_config(
-    page_title="CRE Research Assistant",
-    page_icon="🏢",
+    page_title="CRE Contact Finder",
+    page_icon="🔍",
     layout="wide",
 )
 
@@ -38,28 +39,73 @@ st.set_page_config(
 # === Styling ===
 st.markdown("""
 <style>
-    /* Clean up the default Streamlit look */
     .block-container { padding-top: 2rem; max-width: 1100px; }
     h1 { color: #0f3460; }
-    .stDataFrame { font-size: 14px; }
 
-    /* Status badges */
-    .badge-found {
-        background: #d4edda; color: #155724;
-        padding: 2px 8px; border-radius: 4px; font-size: 13px;
+    /* Contact card */
+    .contact-card {
+        background: #f8f9fa;
+        border-left: 4px solid #0f3460;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+        border-radius: 0 8px 8px 0;
     }
-    .badge-missing {
-        background: #f8d7da; color: #721c24;
-        padding: 2px 8px; border-radius: 4px; font-size: 13px;
+    .contact-card-hit {
+        background: #f0fdf4;
+        border-left: 4px solid #16a34a;
+    }
+    .contact-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1a1a1a;
+        margin-bottom: 4px;
+    }
+    .contact-role {
+        font-size: 14px;
+        color: #6b7280;
+        margin-bottom: 8px;
+    }
+    .contact-detail {
+        font-size: 14px;
+        color: #374151;
+        margin: 2px 0;
+    }
+    .contact-detail a { color: #0f3460; text-decoration: none; }
+    .contact-detail a:hover { text-decoration: underline; }
+
+    /* Confidence badges */
+    .badge-high {
+        background: #dcfce7; color: #166534;
+        padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+    }
+    .badge-medium {
+        background: #fef9c3; color: #854d0e;
+        padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+    }
+    .badge-low {
+        background: #fecaca; color: #991b1b;
+        padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;
+    }
+
+    /* Property info (secondary) */
+    .prop-detail {
+        font-size: 13px; color: #6b7280; margin: 2px 0;
+    }
+
+    /* Stat cards */
+    div[data-testid="stMetric"] {
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
 # === Header ===
-st.title("CRE Research Assistant")
-st.markdown("Paste property addresses below to get owner, zoning, LLC, and contact intelligence.")
-st.caption("Use full addresses with city and state — e.g. **2500 Old Milton Pkwy, Alpharetta, GA 30009**")
+st.title("CRE Contact Finder")
+st.markdown("**Paste a property address. Get the person behind it — name, phone, email, LinkedIn.**")
+st.caption("Goes beyond CoStar: pierces LLCs, finds principals, and gets direct contact info.")
 st.divider()
 
 
@@ -68,9 +114,9 @@ col_input, col_upload = st.columns([3, 1])
 
 with col_input:
     address_text = st.text_area(
-        "Addresses (one per line)",
-        height=180,
-        placeholder="2500 Old Milton Pkwy, Alpharetta, GA 30009\n980 Mansell Rd, Roswell, GA 30076\n11720 Amber Park Dr, Alpharetta, GA 30009",
+        "Property addresses (one per line)",
+        height=150,
+        placeholder="3500 Peachtree Rd, Atlanta, GA 30326\n2500 Old Milton Pkwy, Alpharetta, GA 30009\n980 Mansell Rd, Roswell, GA 30076",
     )
 
 with col_upload:
@@ -82,10 +128,8 @@ with col_upload:
     )
     if uploaded_file:
         file_text = uploaded_file.read().decode("utf-8")
-        # If CSV, try to extract an "address" column; otherwise treat as one-per-line
         if uploaded_file.name.endswith(".csv"):
             reader = csv.DictReader(io.StringIO(file_text))
-            # Look for an address column
             addr_col = None
             for col in (reader.fieldnames or []):
                 if "address" in col.lower():
@@ -101,16 +145,17 @@ with col_upload:
         st.success(f"Loaded {len(address_text.strip().splitlines())} addresses from file")
 
 
-# === Research Button ===
-generate_reports = st.checkbox("Generate PDF reports", value=False)
-run_button = st.button("Research Addresses", type="primary", use_container_width=True)
+# === Options Row ===
+opt_col1, opt_col2 = st.columns([1, 3])
+with opt_col1:
+    generate_reports = st.checkbox("Generate PDF reports", value=False)
+run_button = st.button("Find Contacts", type="primary", use_container_width=True)
 
 
 def _normalize_address(addr):
     """Normalize address formatting so users don't have to be exact."""
     import re
     addr = addr.strip()
-    # Fix common abbreviation variations
     replacements = {
         r'\bParkway\b': 'Pkwy', r'\bPkwy\b': 'Pkwy', r'\bPky\b': 'Pkwy',
         r'\bStreet\b': 'St', r'\bDrive\b': 'Dr', r'\bAvenue\b': 'Ave',
@@ -121,32 +166,24 @@ def _normalize_address(addr):
     for pattern, repl in replacements.items():
         addr = re.sub(pattern, repl, addr, flags=re.IGNORECASE)
 
-    # Split compound words: "Northpoint" → "North Point", "Windward" stays
-    # Only split if it starts with North/South/East/West
     addr = re.sub(r'\b(North|South|East|West)(point|view|park|lake|ridge|wood|creek)\b',
                   lambda m: m.group(1) + ' ' + m.group(2).title(), addr, flags=re.IGNORECASE)
 
-    # If no commas, try to insert them by detecting city/state/zip
     if ',' not in addr:
         addr = _insert_commas(addr)
 
-    # Ensure proper capitalization for each part
     parts = addr.split(',')
     normalized = []
     for i, part in enumerate(parts):
         part = part.strip()
         if i == 0:
-            # Street address — title case
             part = part.title()
         elif i == 1:
-            # City — title case
             part = part.strip().title()
         else:
-            # State/zip — uppercase state
             part = part.strip().upper()
         normalized.append(part)
 
-    # If no comma (just street), return as-is with title case
     if len(normalized) == 1:
         return normalized[0]
 
@@ -154,7 +191,7 @@ def _normalize_address(addr):
 
 
 def _parse_address_parts(addr):
-    """Parse a normalized address like '2500 Old Milton Pkwy, Alpharetta, GA 30009' into parts."""
+    """Parse a normalized address into parts."""
     import re
     parts = [p.strip() for p in addr.split(",")]
     if len(parts) < 2:
@@ -175,10 +212,9 @@ def _parse_address_parts(addr):
 
 
 def _insert_commas(addr):
-    """Insert commas into an address that has none, like '3400 w hospital ave Atlanta ga 30341'."""
+    """Insert commas into an address that has none."""
     import re
 
-    # Known GA cities (most common metro Atlanta)
     _CITIES = [
         "Alpharetta", "Atlanta", "Roswell", "Sandy Springs", "Johns Creek",
         "Milton", "Dunwoody", "Brookhaven", "Marietta", "Smyrna", "Kennesaw",
@@ -190,22 +226,13 @@ def _insert_commas(addr):
         "Hapeville", "Palmetto", "Dacula", "Grayson", "Loganville",
     ]
 
-    # State abbreviations
-    _STATES = ["GA", "AL", "TN", "FL", "SC", "NC"]
-
-    addr_upper = addr.upper()
-
-    # First find the state abbreviation — that anchors everything
     state_match = re.search(r'\b(GA|AL|TN|FL|SC|NC)\b\s*(\d{5})?', addr, re.IGNORECASE)
     state_pos = state_match.start() if state_match else len(addr)
     before_state = addr[:state_pos].strip()
     state_zip = addr[state_pos:].strip() if state_match else ""
 
-    # Now find the city in the part before the state
-    # Sort cities longest-first so "Sandy Springs" matches before "Sandy"
     sorted_cities = sorted(_CITIES, key=len, reverse=True)
     for city in sorted_cities:
-        # Only match city if it appears in the pre-state portion
         idx = before_state.upper().rfind(city.upper())
         if idx > 0:
             street = before_state[:idx].strip()
@@ -214,16 +241,12 @@ def _insert_commas(addr):
                 return f"{street}, {city_part}, {state_zip}"
             return f"{street}, {city_part}"
 
-    # Fallback: look for state abbreviation pattern
     match = re.search(r'\b(GA|AL|TN|FL|SC|NC)\s*(\d{5})?', addr, re.IGNORECASE)
     if match:
         state_start = match.start()
-        # Walk backwards to find where the city starts (after street type)
         before_state = addr[:state_start].strip()
         state_zip = addr[state_start:].strip()
 
-        # Try to find where street ends and city begins
-        # Look for common street suffixes
         street_types = r'\b(St|Rd|Dr|Ave|Blvd|Pkwy|Ln|Cir|Ct|Pl|Hwy|Ter|Trl|Way)\b'
         suffix_match = re.search(street_types, before_state, re.IGNORECASE)
         if suffix_match:
@@ -238,7 +261,6 @@ def _insert_commas(addr):
 
 # === Run Research ===
 if run_button:
-    # Parse and normalize addresses
     raw_addresses = [line.strip() for line in address_text.strip().splitlines() if line.strip()]
     addresses = [_normalize_address(a) for a in raw_addresses]
 
@@ -246,7 +268,6 @@ if run_button:
         st.warning("Please enter at least one address.")
         st.stop()
 
-    # Check for API keys
     missing_keys = []
     if not os.environ.get("ANTHROPIC_API_KEY"):
         missing_keys.append("ANTHROPIC_API_KEY")
@@ -257,7 +278,7 @@ if run_button:
         st.stop()
 
     st.divider()
-    st.subheader(f"Researching {len(addresses)} addresses")
+    st.subheader(f"Researching {len(addresses)} {'address' if len(addresses) == 1 else 'addresses'}...")
 
     progress = st.progress(0, text="Starting research...")
     results = []
@@ -265,7 +286,7 @@ if run_button:
     for i, addr in enumerate(addresses):
         progress.progress(
             (i) / len(addresses),
-            text=f"[{i+1}/{len(addresses)}] {addr}",
+            text=f"[{i+1}/{len(addresses)}] Finding contacts for {addr}",
         )
 
         prop = lookup_property(addr)
@@ -307,7 +328,7 @@ if run_button:
     time.sleep(0.3)
     progress.empty()
 
-    # Store results in session state for persistence
+    # Store results in session state
     st.session_state["results"] = results
     st.session_state["generate_reports"] = generate_reports
 
@@ -316,7 +337,6 @@ if run_button:
     os.makedirs(results_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 
-    # Save CSV
     csv_fields = [
         "address", "property_owner", "owner_mail_address",
         "best_contact", "contact_confidence", "contact_label",
@@ -342,9 +362,7 @@ if run_button:
                 r["best_email"] = best.get("email", "")
             writer.writerow(r)
 
-    # Save JSON (full data for future reference)
     json_path = os.path.join(results_dir, f"{timestamp}_research.json")
-    # Strip non-serializable objects
     json_results = []
     for r in results:
         clean = {k: v for k, v in r.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
@@ -361,100 +379,128 @@ if "results" in st.session_state and st.session_state["results"]:
 
     st.divider()
 
-    # Summary stats
-    found = sum(1 for r in results if r.get("property_owner"))
-    zoned = sum(1 for r in results if r.get("zoning"))
-    llc_found = sum(1 for r in results if r.get("llc_person"))
+    # Summary stats — contact-focused
+    total = len(results)
+    contacts_found = sum(1 for r in results if r.get("ranked_contacts"))
+    phones_found = sum(1 for r in results if any(c.get("phone") for c in r.get("ranked_contacts", [])))
+    high_conf = sum(1 for r in results if any(c["confidence"] == "HIGH" for c in r.get("ranked_contacts", [])))
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Addresses", len(results))
-    col2.metric("Owners Found", found)
-    col3.metric("Zoning Found", zoned)
-    col4.metric("LLC Contacts", llc_found)
+    col1.metric("Properties", total)
+    col2.metric("Contacts Found", contacts_found)
+    col3.metric("Phone Numbers", phones_found)
+    col4.metric("High Confidence", high_conf)
 
     st.divider()
 
-    # === Results Cards ===
+    # === Results — Contact-First Layout ===
     for r in results:
         addr = r["address"]
         owner = r.get("property_owner", "")
-        zoning = r.get("zoning", "")
-        zoning_uses = r.get("zoning_uses", "")
-        parcel = r.get("parcel_id", "")
-        mail_addr = r.get("owner_mail_address", "")
-        source = r.get("data_source", "")
+        ranked = r.get("ranked_contacts", [])
 
-        with st.expander(f"**{addr}** — {owner or 'No owner found'}", expanded=True):
-            col_left, col_right = st.columns(2)
+        # Header: address + owner
+        st.markdown(f"### {addr}")
+        if owner:
+            st.markdown(f"**Owner:** {owner}")
 
-            with col_left:
-                st.markdown("**Property Overview**")
-                if owner:
-                    st.markdown(f"- **Owner:** {owner}")
+        # === CONTACTS (hero section) ===
+        if ranked:
+            for contact in ranked:
+                conf = contact["confidence"]
+                if conf == "HIGH":
+                    badge = '<span class="badge-high">HIGH</span>'
+                    card_class = "contact-card contact-card-hit"
+                elif conf == "MEDIUM":
+                    badge = '<span class="badge-medium">MEDIUM</span>'
+                    card_class = "contact-card"
                 else:
-                    st.markdown("- **Owner:** _Not found_")
+                    badge = '<span class="badge-low">LOW</span>'
+                    card_class = "contact-card"
+
+                # Build contact details HTML
+                details = []
+                if contact.get("phone"):
+                    details.append(f'<div class="contact-detail">Phone: <a href="tel:{contact["phone"]}">{contact["phone"]}</a></div>')
+                if contact.get("email"):
+                    details.append(f'<div class="contact-detail">Email: <a href="mailto:{contact["email"]}">{contact["email"]}</a></div>')
+                if contact.get("linkedin"):
+                    details.append(f'<div class="contact-detail">LinkedIn: <a href="{contact["linkedin"]}" target="_blank">{contact["linkedin"]}</a></div>')
+
+                details_html = "\n".join(details) if details else '<div class="contact-detail" style="color:#9ca3af;">No direct contact info found</div>'
+
+                st.markdown(f"""
+                <div class="{card_class}">
+                    <div class="contact-name">{contact['name']} {badge}</div>
+                    <div class="contact-role">{contact['label']} — via {contact['source']}</div>
+                    {details_html}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="contact-card">
+                <div class="contact-name" style="color:#9ca3af;">No contacts found</div>
+                <div class="contact-role">Try the research links below to search manually</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # === PROPERTY DETAILS (collapsed, secondary) ===
+        with st.expander("Property Details & Research Links"):
+            detail_col1, detail_col2 = st.columns(2)
+
+            with detail_col1:
+                zoning = r.get("zoning", "")
+                zoning_uses = r.get("zoning_uses", "")
+                parcel = r.get("parcel_id", "")
+                mail_addr = r.get("owner_mail_address", "")
+                source = r.get("data_source", "")
+
                 if mail_addr:
-                    st.markdown(f"- **Tax Mailing:** {mail_addr}")
+                    st.markdown(f"**Tax Mailing:** {mail_addr}")
                 if zoning:
-                    st.markdown(f"- **Zoning:** {zoning}")
+                    st.markdown(f"**Zoning:** {zoning}")
                 if zoning_uses:
-                    st.markdown(f"- {zoning_uses}")
+                    st.markdown(f"{zoning_uses}")
                 if parcel:
-                    st.markdown(f"- **Parcel ID:** {parcel}")
+                    st.markdown(f"**Parcel ID:** {parcel}")
                 if source:
-                    st.markdown(f"- **Source:** {source}")
+                    st.markdown(f"**Data Source:** {source}")
 
-            with col_right:
-                ranked = r.get("ranked_contacts", [])
-                if ranked:
-                    st.markdown("**Ranked Contacts**")
-                    for contact in ranked:
-                        conf = contact["confidence"]
-                        if conf == "HIGH":
-                            badge = '<span class="badge-found">HIGH</span>'
-                        elif conf == "MEDIUM":
-                            badge = '<span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:4px;font-size:13px;">MEDIUM</span>'
-                        else:
-                            badge = '<span class="badge-missing">LOW</span>'
+                # LLC filing details
+                if r.get("llc_principal_address") or r.get("llc_filing_status") or r.get("llc_background"):
+                    st.markdown("---")
+                    st.markdown("**LLC Details**")
+                    if r.get("llc_principal_address"):
+                        st.markdown(f"Principal Office: {r['llc_principal_address']}")
+                    if r.get("llc_filing_status"):
+                        st.markdown(f"Filing Status: {r['llc_filing_status']}")
+                    if r.get("llc_background"):
+                        st.markdown(f"Background: {r['llc_background']}")
 
-                        st.markdown(f"{badge} **{contact['name']}**", unsafe_allow_html=True)
-                        st.markdown(f"&nbsp;&nbsp;&nbsp;_{contact['label']}_ — via {contact['source']}", unsafe_allow_html=True)
-                        if contact.get("phone"):
-                            st.markdown(f"- Phone: {contact['phone']}")
-                        if contact.get("email"):
-                            st.markdown(f"- Email: {contact['email']}")
-                        if contact.get("linkedin"):
-                            st.markdown(f"- [LinkedIn]({contact['linkedin']})")
-
-                    # Show LLC filing details below contacts if available
-                    if r.get("llc_principal_address") or r.get("llc_filing_status"):
-                        st.markdown("---")
-                        st.markdown("**LLC Filing Details**")
-                        if r.get("llc_principal_address"):
-                            st.markdown(f"- **Principal Office:** {r['llc_principal_address']}")
-                        if r.get("llc_filing_status"):
-                            st.markdown(f"- **Filing Status:** {r['llc_filing_status']}")
+            with detail_col2:
+                st.markdown("**Research Links**")
+                links = []
+                if r.get("qpublic_link"):
+                    links.append(f"- [qPublic (property records)]({r['qpublic_link']})")
+                if r.get("ga_sos_link"):
+                    links.append(f"- [GA Secretary of State (LLC)]({r['ga_sos_link']})")
+                if r.get("gsccca_link"):
+                    links.append(f"- [GSCCCA (deed search)]({r['gsccca_link']})")
+                if r.get("loopnet_link"):
+                    links.append(f"- [LoopNet]({r['loopnet_link']})")
+                if r.get("assessor_link"):
+                    links.append(f"- [County Assessor]({r['assessor_link']})")
+                if r.get("management_search"):
+                    links.append(f"- [Google: owner contacts]({r['management_search']})")
+                if links:
+                    st.markdown("\n".join(links))
                 else:
-                    st.markdown("**Contacts**")
-                    st.markdown("_No contacts found_")
+                    st.markdown("_No links available_")
 
-            # Research links row
-            link_cols = st.columns(5)
-            if r.get("qpublic_link"):
-                link_cols[0].markdown(f"[qPublic]({r['qpublic_link']})")
-            if r.get("ga_sos_link"):
-                link_cols[1].markdown(f"[GA SOS]({r['ga_sos_link']})")
-            if r.get("gsccca_link"):
-                link_cols[2].markdown(f"[GSCCCA Deeds]({r['gsccca_link']})")
-            if r.get("loopnet_link"):
-                link_cols[3].markdown(f"[LoopNet]({r['loopnet_link']})")
-            if r.get("assessor_link"):
-                link_cols[4].markdown(f"[County Assessor]({r['assessor_link']})")
-
-    st.divider()
+        st.divider()
 
     # === Downloads ===
-    st.subheader("Download Results")
+    st.subheader("Export")
     dl_col1, dl_col2 = st.columns(2)
 
     # CSV download
@@ -473,7 +519,6 @@ if "results" in st.session_state and st.session_state["results"]:
     writer = csv.DictWriter(csv_buffer, fieldnames=csv_fields, extrasaction="ignore")
     writer.writeheader()
     for r in results:
-        # Flatten best ranked contact into CSV row
         ranked = r.get("ranked_contacts", [])
         if ranked:
             best = ranked[0]
@@ -487,12 +532,12 @@ if "results" in st.session_state and st.session_state["results"]:
     dl_col1.download_button(
         label="Download CSV",
         data=csv_buffer.getvalue(),
-        file_name="cre_research_results.csv",
+        file_name="cre_contacts.csv",
         mime="text/csv",
         use_container_width=True,
     )
 
-    # PDF download (generate for each result)
+    # PDF download
     if st.session_state.get("generate_reports"):
         report_dir = os.path.join(os.path.dirname(__file__), "reports")
         os.makedirs(report_dir, exist_ok=True)
@@ -512,7 +557,6 @@ if "results" in st.session_state and st.session_state["results"]:
                     use_container_width=True,
                 )
         else:
-            # Bundle multiple PDFs into a zip
             import zipfile
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, "w") as zf:
@@ -531,27 +575,20 @@ if "results" in st.session_state and st.session_state["results"]:
 
 # === Sidebar ===
 with st.sidebar:
-    st.markdown("### About")
+    st.markdown("### What This Does")
     st.markdown(
-        "CRE Research Assistant finds **property owners**, "
-        "**zoning data**, **LLC principals**, and **contact info** "
-        "for commercial real estate addresses."
+        "Paste a property address and get the **actual person** "
+        "behind the LLC — with their phone, email, and LinkedIn.\n\n"
+        "The part CoStar doesn't do."
     )
     st.divider()
-    st.markdown("### How it works")
+    st.markdown("### How It Works")
     st.markdown(
-        "1. Paste addresses (one per line)\n"
-        "2. Click **Research Addresses**\n"
-        "3. Review results and download CSV/PDF"
-    )
-    st.divider()
-    st.markdown("### Data Sources")
-    st.markdown(
-        "- City ArcGIS (owner, zoning, parcel)\n"
-        "- Google Search via SerpAPI\n"
-        "- GA Secretary of State (LLC)\n"
-        "- Website scraping (contacts)\n"
-        "- AI extraction (Claude Haiku)"
+        "1. Looks up property owner (county GIS)\n"
+        "2. Pierces the LLC (Secretary of State)\n"
+        "3. Finds the principal's contact info\n"
+        "4. Reverse-looks up who's at the address\n"
+        "5. Ranks all contacts by confidence"
     )
     st.divider()
     st.markdown("### Search History")
@@ -563,7 +600,6 @@ with st.sidebar:
         )
         if history_files:
             for hf in history_files[:10]:
-                # Parse timestamp from filename
                 ts = hf.replace("_research.csv", "")
                 try:
                     dt = datetime.strptime(ts, "%Y-%m-%d_%H%M%S")
@@ -582,7 +618,9 @@ with st.sidebar:
         else:
             st.markdown("_No searches yet_")
     st.divider()
+    st.markdown("### Coverage")
     st.markdown(
-        "<small>Built by CRE Research Assistant</small>",
-        unsafe_allow_html=True,
+        "Optimized for **metro Atlanta** — 40+ cities across "
+        "Fulton, Cobb, DeKalb, Gwinnett, Cherokee, and more.\n\n"
+        "Other areas use web search fallback."
     )
