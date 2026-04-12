@@ -95,6 +95,30 @@ def is_person_name(name):
     return True
 
 
+def _is_commercial_zoning(zoning):
+    """Check if zoning code indicates a commercial/office/industrial property."""
+    if not zoning:
+        return False
+    zoning_upper = zoning.upper().strip()
+    # Common commercial zoning prefixes
+    commercial_prefixes = [
+        "C", "C-", "C1", "C2", "C3", "C4", "C5",
+        "O", "O-", "O1", "O2",  # Office
+        "M", "M-", "M1", "M2",  # Mixed-use / Industrial
+        "I", "I-", "I1", "I2",  # Industrial
+        "B", "B-", "B1", "B2",  # Business
+        "MU",  # Mixed-use
+        "CG", "CL", "CC",  # Commercial general/local/community
+    ]
+    for prefix in commercial_prefixes:
+        if zoning_upper.startswith(prefix):
+            return True
+    # Also check description keywords
+    commercial_keywords = ["commercial", "office", "industrial", "business", "mixed"]
+    zoning_lower = zoning.lower()
+    return any(kw in zoning_lower for kw in commercial_keywords)
+
+
 def rank_contacts(result):
     """
     Take a property result dict and produce a ranked list of contacts.
@@ -104,10 +128,12 @@ def rank_contacts(result):
       - source: 'llc_principal', 'registered_agent', 'trestle', 'web_search', 'mgmt'
       - confidence: 'HIGH', 'MEDIUM', 'LOW'
       - label: human-readable role description
+      - is_tenant: True if this is a tenant at a commercial property (for UI separation)
 
-    Returns list sorted by confidence (HIGH first).
+    Returns list sorted by confidence (HIGH first), with tenants separated out.
     """
     contacts = []
+    is_commercial = _is_commercial_zoning(result.get("zoning", ""))
 
     # 1. LLC principal (person_name from SOS search) — usually the real owner
     llc_person = result.get("llc_person", "")
@@ -120,6 +146,7 @@ def rank_contacts(result):
             "source": "llc_principal",
             "confidence": "HIGH",
             "label": "LLC Principal / Owner",
+            "is_tenant": False,
         })
 
     # 2. Registered agent — could be a real person or a filing service
@@ -134,6 +161,7 @@ def rank_contacts(result):
                 "source": "registered_agent",
                 "confidence": "LOW",
                 "label": "Filing Agent (not decision-maker)",
+                "is_tenant": False,
             })
         elif is_person_name(reg_agent):
             contacts.append({
@@ -144,6 +172,7 @@ def rank_contacts(result):
                 "source": "registered_agent",
                 "confidence": "MEDIUM",
                 "label": "Registered Agent (individual)",
+                "is_tenant": False,
             })
         else:
             contacts.append({
@@ -154,9 +183,11 @@ def rank_contacts(result):
                 "source": "registered_agent",
                 "confidence": "LOW",
                 "label": "Filing Agent (not decision-maker)",
+                "is_tenant": False,
             })
 
-    # 3. Trestle residents — real people at the address with direct contact info
+    # 3. Trestle residents/tenants
+    # For commercial properties, these are TENANTS, not owner contacts
     for resident in result.get("trestle_residents", []):
         name = resident.get("name", "")
         if not name:
@@ -164,19 +195,8 @@ def rank_contacts(result):
         phones = resident.get("phones", [])
         emails = resident.get("emails", [])
 
-        if is_person_name(name):
-            has_contact = bool(phones or emails)
-            contacts.append({
-                "name": name,
-                "phone": phones[0]["number"] if phones else "",
-                "email": emails[0] if emails else "",
-                "linkedin": "",
-                "source": "trestle",
-                "confidence": "HIGH" if has_contact else "MEDIUM",
-                "label": "Resident (verified at address)",
-            })
-        else:
-            # Business name from Trestle — lower value
+        if is_commercial:
+            # Commercial property — Trestle results are tenants
             contacts.append({
                 "name": name,
                 "phone": phones[0]["number"] if phones else "",
@@ -184,8 +204,34 @@ def rank_contacts(result):
                 "linkedin": "",
                 "source": "trestle",
                 "confidence": "LOW",
-                "label": "Business at address",
+                "label": "Tenant" if is_person_name(name) else "Business tenant",
+                "is_tenant": True,
             })
+        else:
+            # Residential property — Trestle results may be the actual owner
+            if is_person_name(name):
+                has_contact = bool(phones or emails)
+                contacts.append({
+                    "name": name,
+                    "phone": phones[0]["number"] if phones else "",
+                    "email": emails[0] if emails else "",
+                    "linkedin": "",
+                    "source": "trestle",
+                    "confidence": "HIGH" if has_contact else "MEDIUM",
+                    "label": "Resident (verified at address)",
+                    "is_tenant": False,
+                })
+            else:
+                contacts.append({
+                    "name": name,
+                    "phone": phones[0]["number"] if phones else "",
+                    "email": emails[0] if emails else "",
+                    "linkedin": "",
+                    "source": "trestle",
+                    "confidence": "LOW",
+                    "label": "Business at address",
+                    "is_tenant": False,
+                })
 
     # 4. Management company / leasing contacts
     if result.get("leasing_contact"):
@@ -197,6 +243,7 @@ def rank_contacts(result):
             "source": "mgmt",
             "confidence": "MEDIUM",
             "label": "Leasing Agent",
+            "is_tenant": False,
         })
     elif result.get("mgmt_company"):
         contacts.append({
@@ -207,11 +254,13 @@ def rank_contacts(result):
             "source": "mgmt",
             "confidence": "LOW",
             "label": "Property Management Company",
+            "is_tenant": False,
         })
 
-    # Sort: HIGH > MEDIUM > LOW, then people before companies
+    # Sort: non-tenants first, then HIGH > MEDIUM > LOW, then people before companies
     confidence_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     contacts.sort(key=lambda c: (
+        1 if c.get("is_tenant") else 0,
         confidence_order.get(c["confidence"], 3),
         0 if is_person_name(c["name"]) else 1,
     ))

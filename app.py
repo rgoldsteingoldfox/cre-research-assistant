@@ -379,11 +379,11 @@ if "results" in st.session_state and st.session_state["results"]:
 
     st.divider()
 
-    # Summary stats — contact-focused
+    # Summary stats — owner contacts only (exclude tenants)
     total = len(results)
-    contacts_found = sum(1 for r in results if r.get("ranked_contacts"))
-    phones_found = sum(1 for r in results if any(c.get("phone") for c in r.get("ranked_contacts", [])))
-    high_conf = sum(1 for r in results if any(c["confidence"] == "HIGH" for c in r.get("ranked_contacts", [])))
+    contacts_found = sum(1 for r in results if any(not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
+    phones_found = sum(1 for r in results if any(c.get("phone") and not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
+    high_conf = sum(1 for r in results if any(c["confidence"] == "HIGH" and not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Properties", total)
@@ -404,9 +404,13 @@ if "results" in st.session_state and st.session_state["results"]:
         if owner:
             st.markdown(f"**Owner:** {owner}")
 
-        # === CONTACTS (hero section) ===
-        if ranked:
-            for contact in ranked:
+        # Split contacts into owner contacts vs tenants
+        owner_contacts = [c for c in ranked if not c.get("is_tenant")]
+        tenant_contacts = [c for c in ranked if c.get("is_tenant")]
+
+        # === OWNER CONTACTS (hero section) ===
+        if owner_contacts:
+            for contact in owner_contacts:
                 conf = contact["confidence"]
                 if conf == "HIGH":
                     badge = '<span class="badge-high">HIGH</span>'
@@ -418,7 +422,6 @@ if "results" in st.session_state and st.session_state["results"]:
                     badge = '<span class="badge-low">LOW</span>'
                     card_class = "contact-card"
 
-                # Build contact details HTML
                 details = []
                 if contact.get("phone"):
                     details.append(f'<div class="contact-detail">Phone: <a href="tel:{contact["phone"]}">{contact["phone"]}</a></div>')
@@ -439,10 +442,22 @@ if "results" in st.session_state and st.session_state["results"]:
         else:
             st.markdown("""
             <div class="contact-card">
-                <div class="contact-name" style="color:#9ca3af;">No contacts found</div>
+                <div class="contact-name" style="color:#9ca3af;">No owner contacts found</div>
                 <div class="contact-role">Try the research links below to search manually</div>
             </div>
             """, unsafe_allow_html=True)
+
+        # === TENANTS (collapsed, separate section) ===
+        if tenant_contacts:
+            with st.expander(f"Tenants at this address ({len(tenant_contacts)})"):
+                for contact in tenant_contacts:
+                    details = []
+                    if contact.get("phone"):
+                        details.append(f'Phone: [{contact["phone"]}](tel:{contact["phone"]})')
+                    if contact.get("email"):
+                        details.append(f'Email: {contact["email"]}')
+                    detail_str = " | ".join(details) if details else "_No contact info_"
+                    st.markdown(f"- **{contact['name']}** — {contact['label']} — {detail_str}")
 
         # === PROPERTY DETAILS (collapsed, secondary) ===
         with st.expander("Property Details & Research Links"):
