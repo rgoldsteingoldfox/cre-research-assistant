@@ -257,6 +257,38 @@ def rank_contacts(result):
             "is_tenant": False,
         })
 
+    # 5. Fallback: if no person was found but we have LLC details, surface the entity
+    #    This ensures something useful always shows when we have data
+    non_tenant_contacts = [c for c in contacts if not c.get("is_tenant")]
+    if not non_tenant_contacts:
+        owner = result.get("property_owner", "")
+        llc_details = result.get("llc_details", {}) if isinstance(result.get("llc_details"), dict) else {}
+        principal_addr = llc_details.get("principal_address", "") or result.get("llc_principal_address", "")
+        filing_status = llc_details.get("filing_status", "") or result.get("llc_filing_status", "")
+        mail_addr = result.get("owner_mail_address", "")
+
+        if owner:
+            # Build a useful label from what we know
+            label_parts = []
+            if principal_addr:
+                label_parts.append(f"Principal office: {principal_addr}")
+            if mail_addr:
+                label_parts.append(f"Tax mail: {mail_addr}")
+            if filing_status:
+                label_parts.append(f"GA filing: {filing_status}")
+            label = " | ".join(label_parts) if label_parts else "Property owner entity"
+
+            contacts.append({
+                "name": owner,
+                "phone": "",
+                "email": "",
+                "linkedin": "",
+                "source": "llc_filing",
+                "confidence": "MEDIUM",
+                "label": label,
+                "is_tenant": False,
+            })
+
     # Sort: non-tenants first, then HIGH > MEDIUM > LOW, then people before companies
     confidence_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     contacts.sort(key=lambda c: (

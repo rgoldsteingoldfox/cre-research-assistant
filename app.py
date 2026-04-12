@@ -430,6 +430,10 @@ if "results" in st.session_state and st.session_state["results"]:
                 if contact.get("linkedin"):
                     details.append(f'<div class="contact-detail">LinkedIn: <a href="{contact["linkedin"]}" target="_blank">{contact["linkedin"]}</a></div>')
 
+                # For entity cards (no person found), show what we know as next steps
+                if not details and contact.get("source") == "llc_filing":
+                    details.append('<div class="contact-detail" style="color:#6b7280;">No direct phone/email found — use the details above to research the entity</div>')
+
                 details_html = "\n".join(details) if details else '<div class="contact-detail" style="color:#9ca3af;">No direct contact info found</div>'
 
                 st.markdown(f"""
