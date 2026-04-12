@@ -7,7 +7,9 @@ import os
 import sys
 import io
 import csv
+import json
 import time
+from datetime import datetime
 import streamlit as st
 
 # Add project root to path
@@ -309,6 +311,49 @@ if run_button:
     st.session_state["results"] = results
     st.session_state["generate_reports"] = generate_reports
 
+    # === Auto-save results to disk ===
+    results_dir = os.path.join(os.path.dirname(__file__), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+
+    # Save CSV
+    csv_fields = [
+        "address", "property_owner", "owner_mail_address",
+        "best_contact", "contact_confidence", "contact_label",
+        "best_phone", "best_email",
+        "zoning", "zoning_uses", "parcel_id",
+        "llc_person", "llc_registered_agent", "llc_principal_address",
+        "llc_phone", "llc_email", "llc_linkedin", "llc_filing_status",
+        "mgmt_company", "leasing_contact", "mgmt_phone", "mgmt_email",
+        "data_source",
+    ]
+    csv_path = os.path.join(results_dir, f"{timestamp}_research.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=csv_fields, extrasaction="ignore")
+        writer.writeheader()
+        for r in results:
+            ranked = r.get("ranked_contacts", [])
+            if ranked:
+                best = ranked[0]
+                r["best_contact"] = best["name"]
+                r["contact_confidence"] = best["confidence"]
+                r["contact_label"] = best["label"]
+                r["best_phone"] = best.get("phone", "")
+                r["best_email"] = best.get("email", "")
+            writer.writerow(r)
+
+    # Save JSON (full data for future reference)
+    json_path = os.path.join(results_dir, f"{timestamp}_research.json")
+    # Strip non-serializable objects
+    json_results = []
+    for r in results:
+        clean = {k: v for k, v in r.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
+        json_results.append(clean)
+    with open(json_path, "w") as f:
+        json.dump(json_results, f, indent=2, default=str)
+
+    st.success(f"Results auto-saved to `results/{timestamp}_research.csv`")
+
 
 # === Display Results ===
 if "results" in st.session_state and st.session_state["results"]:
@@ -508,6 +553,34 @@ with st.sidebar:
         "- Website scraping (contacts)\n"
         "- AI extraction (Claude Haiku)"
     )
+    st.divider()
+    st.markdown("### Search History")
+    results_dir = os.path.join(os.path.dirname(__file__), "results")
+    if os.path.exists(results_dir):
+        history_files = sorted(
+            [f for f in os.listdir(results_dir) if f.endswith("_research.csv")],
+            reverse=True,
+        )
+        if history_files:
+            for hf in history_files[:10]:
+                # Parse timestamp from filename
+                ts = hf.replace("_research.csv", "")
+                try:
+                    dt = datetime.strptime(ts, "%Y-%m-%d_%H%M%S")
+                    label = dt.strftime("%b %d, %Y %I:%M %p")
+                except ValueError:
+                    label = ts
+                filepath = os.path.join(results_dir, hf)
+                with open(filepath, "rb") as f:
+                    st.download_button(
+                        label=f"{label}",
+                        data=f.read(),
+                        file_name=hf,
+                        mime="text/csv",
+                        key=f"history_{hf}",
+                    )
+        else:
+            st.markdown("_No searches yet_")
     st.divider()
     st.markdown(
         "<small>Built by CRE Research Assistant</small>",
