@@ -56,42 +56,59 @@ def is_filing_agent(name):
 
 
 def is_person_name(name):
-    """Check if a name looks like an individual person (not a company)."""
+    """Check if a name looks like an individual person (not a company).
+    Handles ALL CAPS (tax records), joint owners with &, and name suffixes.
+    """
     if not name:
         return False
     name_lower = name.lower().strip()
+
     # Companies tend to have these
     company_signals = [
-        'llc', 'inc', 'corp', 'ltd', 'group', 'holdings',
+        'llc', 'l.l.c', 'inc', 'corp', 'ltd', 'group', 'holdings',
         'properties', 'ventures', 'capital', 'management',
         'services', 'associates', 'partners', 'enterprises',
         'solutions', 'consulting', 'the ', 'foundation',
+        'trust', 'fund', 'realty', 'investments', 'development',
     ]
     for signal in company_signals:
         if signal in name_lower:
             return False
-    # A person name is typically 2-4 words, all starting with uppercase
-    words = name.strip().split()
-    if len(words) < 2 or len(words) > 5:
-        return False
-    # Each word in a real name starts with a capital letter followed by lowercase
-    # Company names often have all-caps words or unusual patterns
-    for word in words:
-        # Allow suffixes like Jr, Sr, III, II, IV
-        if word in ("Jr", "Sr", "II", "III", "IV", "V"):
-            continue
-        # Must start with uppercase, rest mostly lowercase
-        if not word[0].isupper():
-            return False
-        # If it's all uppercase and longer than 2 chars, probably not a person name
-        if word.isupper() and len(word) > 2:
-            return False
-    # Final heuristic: common person name has at least one word that looks like a first name
-    # (3+ letters, not all consonants)
+
+    # Joint owners: "POPP ROBERT W. & POPP ROSEMARY CELESTE"
+    # Check each side of & separately
+    if '&' in name:
+        parts = name.split('&')
+        return any(is_person_name(p.strip()) for p in parts)
+
+    # Clean up: remove suffixes and punctuation for word counting
     import re
-    has_vowel_word = any(re.search(r'[aeiou]', w, re.IGNORECASE) for w in words)
+    clean = re.sub(r'[.,]', '', name).strip()
+    words = clean.split()
+
+    if len(words) < 2 or len(words) > 6:
+        return False
+
+    # Filter out known suffixes
+    suffixes = {"JR", "SR", "II", "III", "IV", "V", "Jr", "Sr"}
+    core_words = [w for w in words if w not in suffixes]
+
+    if len(core_words) < 2:
+        return False
+
+    # Check: at least one word has a vowel (real names do, acronyms often don't)
+    has_vowel_word = any(re.search(r'[aeiou]', w, re.IGNORECASE) for w in core_words)
     if not has_vowel_word:
         return False
+
+    # Check: words should start with a letter (not a number)
+    for word in core_words:
+        if word[0].isdigit():
+            return False
+
+    # Single-letter words are fine (middle initials like "W" or "J")
+    # ALL CAPS is fine (tax records are always all caps)
+    # Mixed case is fine (normal names)
     return True
 
 
@@ -134,6 +151,21 @@ def rank_contacts(result):
     """
     contacts = []
     is_commercial = _is_commercial_zoning(result.get("zoning", ""))
+
+    # 0. If the property owner IS a person (not an LLC/entity), surface them directly
+    property_owner = result.get("property_owner", "")
+    if property_owner and is_person_name(property_owner):
+        mail_addr = result.get("owner_mail_address", "")
+        contacts.append({
+            "name": property_owner.title() if property_owner.isupper() else property_owner,
+            "phone": "",
+            "email": "",
+            "linkedin": "",
+            "source": "property_records",
+            "confidence": "HIGH",
+            "label": f"Property Owner" + (f" — Tax mail: {mail_addr}" if mail_addr else ""),
+            "is_tenant": False,
+        })
 
     # 1. LLC principal (person_name from SOS search) — usually the real owner
     llc_person = result.get("llc_person", "")

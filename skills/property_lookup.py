@@ -424,84 +424,98 @@ def _query_arcgis(street, city):
     # Normalize city name
     city_clean = city.strip().title()
 
+    # Build list of configs to try: city-specific first, then county fallback
+    configs_to_try = []
+
     # Try city-specific endpoint first
-    config = ARCGIS_ENDPOINTS.get(city_clean)
+    city_config = ARCGIS_ENDPOINTS.get(city_clean)
+    if city_config:
+        configs_to_try.append(city_config)
 
-    # If no city endpoint, try county-level endpoints
-    if not config:
-        for county_name, county_config in COUNTY_ARCGIS_ENDPOINTS.items():
-            if city_clean in county_config.get("cities", []):
-                config = county_config
-                break
+    # Always add county-level endpoint as fallback
+    # (some addresses have a city name but are actually in unincorporated county)
+    for county_name, county_config in COUNTY_ARCGIS_ENDPOINTS.items():
+        if city_clean in county_config.get("cities", []):
+            if county_config not in configs_to_try:
+                configs_to_try.append(county_config)
 
-    if not config:
+    # If city has its own endpoint but isn't in any county's city list,
+    # try detecting county from common city-to-county mappings
+    if city_config and len(configs_to_try) == 1:
+        # Alpharetta, Roswell are in Fulton County
+        city_county_map = {
+            "Alpharetta": "Fulton", "Roswell": "Fulton",
+        }
+        fallback_county = city_county_map.get(city_clean)
+        if fallback_county and fallback_county in COUNTY_ARCGIS_ENDPOINTS:
+            configs_to_try.append(COUNTY_ARCGIS_ENDPOINTS[fallback_county])
+
+    if not configs_to_try:
         return None
-    url = f"{config['url']}/{config['layer']}/query"
-    fields = config["fields"]
 
-    # Build address search — use LIKE for fuzzy matching
-    # Strip suite numbers and normalize common abbreviations
+    # Build search address once
     search_addr = street.split(" Suite")[0].split(" Ste")[0].split(" #")[0].strip()
-
-    # Use just the street number for matching — handles all variations
-    # "7900 Northpoint Parkway" and "7900 North Point Pkwy" both start with "7900"
-    # The LIKE query with just the number is broad enough to find the right record
     import re as _re
     number_match = _re.match(r'^(\d+)', search_addr)
     if number_match:
         street_num = number_match.group(1)
-        # Use number + first word of street name for tighter match
         words = search_addr.split()
         if len(words) >= 2:
-            # Use number + beginning of second word (handles "Northpoint" vs "North")
-            second_word = words[1][:5]  # First 5 chars of street name
+            second_word = words[1][:5]
             search_addr = f"{street_num} {second_word}"
-
-    # Uppercase for case-insensitive matching (some counties store UPPERCASE)
     search_addr_upper = search_addr.upper()
 
-    params = {
-        "where": f"{fields['address']} LIKE '{search_addr_upper}%'",
-        "outFields": ",".join(v for v in fields.values() if v),
-        "f": "json",
-        "resultRecordCount": 1,
-    }
+    # Try each config until we get a result
+    for config in configs_to_try:
+        url = f"{config['url']}/{config['layer']}/query"
+        fields = config["fields"]
 
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-        data = resp.json()
-    except Exception:
-        return None
+        params = {
+            "where": f"{fields['address']} LIKE '{search_addr_upper}%'",
+            "outFields": ",".join(v for v in fields.values() if v),
+            "f": "json",
+            "resultRecordCount": 1,
+        }
 
-    features = data.get("features", [])
-    if not features:
-        return None
+        try:
+            resp = requests.get(url, params=params, timeout=10)
+            data = resp.json()
+        except Exception:
+            continue
 
-    attrs = features[0].get("attributes", {})
+        features = data.get("features", [])
+        if not features:
+            continue
 
-    owner = (attrs.get(fields["owner"], "") or "").strip()
-    owner2 = (attrs.get(fields.get("owner2", ""), "") or "").strip()
-    if owner2:
-        owner = f"{owner} / {owner2}"
+        # Found a result — extract and return
+        attrs = features[0].get("attributes", {})
 
-    zoning_code = (attrs.get(fields["zoning_code"], "") or "").strip()
-    zoning_desc = (attrs.get(fields.get("zoning_desc", ""), "") or "").strip()
-    zoning = f"{zoning_code} - {zoning_desc}" if zoning_desc else zoning_code
+        owner = (attrs.get(fields["owner"], "") or "").strip()
+        owner2 = (attrs.get(fields.get("owner2", ""), "") or "").strip()
+        if owner2:
+            owner = f"{owner} / {owner2}"
 
-    parcel_id = (attrs.get(fields.get("parcel_id", ""), "") or "").strip()
+        zoning_code = (attrs.get(fields["zoning_code"], "") or "").strip()
+        zoning_desc = (attrs.get(fields.get("zoning_desc", ""), "") or "").strip()
+        zoning = f"{zoning_code} - {zoning_desc}" if zoning_desc else zoning_code
 
-    # Owner mailing address (where tax bills go — often the owner's actual address)
-    mail_addr1 = (attrs.get(fields.get("mail_addr1", ""), "") or "").strip()
-    mail_addr2 = (attrs.get(fields.get("mail_addr2", ""), "") or "").strip()
-    mail_address = ", ".join(p for p in [mail_addr1, mail_addr2] if p)
+        parcel_id = (attrs.get(fields.get("parcel_id", ""), "") or "").strip()
 
-    return {
-        "owner": owner,
-        "zoning": zoning,
-        "parcel_id": parcel_id,
-        "owner_mail_address": mail_address,
-        "source": f"ArcGIS ({city_clean})",
-    }
+        # Owner mailing address (where tax bills go — often the owner's actual address)
+        mail_addr1 = (attrs.get(fields.get("mail_addr1", ""), "") or "").strip()
+        mail_addr2 = (attrs.get(fields.get("mail_addr2", ""), "") or "").strip()
+        mail_address = ", ".join(p for p in [mail_addr1, mail_addr2] if p)
+
+        return {
+            "owner": owner,
+            "zoning": zoning,
+            "parcel_id": parcel_id,
+            "owner_mail_address": mail_address,
+            "source": f"ArcGIS ({city_clean})",
+        }
+
+    # No results from any endpoint
+    return None
 
 
 def _interpret_zoning(zoning, city, api_key):
