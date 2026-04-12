@@ -134,6 +134,147 @@ COUNTY_ARCGIS_ENDPOINTS = {
             "Waleska",
         ],
     },
+    "Forsyth": {
+        "url": "https://geo.forsythco.com/gis/rest/services/EnerGov/EnerGovParcelAddressMapService/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "OWNERNME2",
+            "parcel_id": "PARCELID",
+            "mail_addr1": "PSTLADDRESS",
+            "mail_addr2": "PSTLCITY",
+        },
+        "cities": [
+            "Cumming", "Sugar Hill",
+        ],
+    },
+    "Henry": {
+        "url": "https://arcgis.co.henry.ga.us/server/rest/services/Parcels/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "OWNERNME2",
+            "parcel_id": "PARCELID",
+            "mail_addr1": "PSTLADDRESS",
+            "mail_addr2": "PSTLCITY",
+        },
+        "cities": [
+            "McDonough", "Stockbridge", "Hampton", "Locust Grove",
+        ],
+    },
+    "Douglas": {
+        "url": "https://gis.dcga.us/arcgis/rest/services/MapLayers/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "",
+            "parcel_id": "PARCELID",
+            "mail_addr1": "PSTLADDRESS",
+            "mail_addr2": "PSTLCITY",
+        },
+        "cities": [
+            "Douglasville",
+        ],
+    },
+    "Hall": {
+        "url": "https://webmap.hallcounty.org/server/rest/services/GHCGIS_WebData/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "",
+            "parcel_id": "PARCELID",
+        },
+        "cities": [
+            "Gainesville", "Flowery Branch", "Oakwood",
+        ],
+    },
+    "Fayette": {
+        "url": "https://gis.peachtree-city.org/arcgis/rest/services/Peachtree_City_Parcels/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "",
+            "parcel_id": "PARCELID",
+        },
+        "cities": [
+            "Fayetteville", "Peachtree City", "Tyrone",
+        ],
+    },
+    "Coweta": {
+        "url": "https://coweta-gis-web.coweta.ga.us/arcgis/rest/services/Parcels/FeatureServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "",
+            "parcel_id": "PARCELID",
+        },
+        "cities": [
+            "Newnan", "Senoia", "Sharpsburg",
+        ],
+    },
+    "Jackson": {
+        "url": "https://jcgis.jacksongov.org/arcgis/rest/services/ParcelViewer/CityAndDistrict_Layers/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "",
+            "parcel_id": "PARCELID",
+        },
+        "cities": [
+            "Jefferson", "Hoschton", "Braselton",
+        ],
+    },
+    "Walton": {
+        "url": "https://services1.arcgis.com/TaXHPwWfIMuzJ7Ov/arcgis/rest/services/WaltonCountyPropeties/FeatureServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "",
+            "parcel_id": "PARCELID",
+        },
+        "cities": [
+            "Monroe", "Loganville", "Social Circle",
+        ],
+    },
+    "Chatham": {
+        "url": "https://pub.sagis.org/arcgis/rest/services/Pictometry/ParcelDigest/MapServer",
+        "layer": 0,
+        "fields": {
+            "address": "SITEADDRESS",
+            "zoning_code": "",
+            "zoning_desc": "",
+            "owner": "OWNERNME1",
+            "owner2": "",
+            "parcel_id": "PARCELID",
+        },
+        "cities": [
+            "Savannah", "Pooler", "Garden City", "Tybee Island",
+        ],
+    },
 }
 
 

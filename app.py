@@ -216,14 +216,40 @@ def _insert_commas(addr):
     import re
 
     _CITIES = [
+        # Fulton / City-specific
         "Alpharetta", "Atlanta", "Roswell", "Sandy Springs", "Johns Creek",
-        "Milton", "Dunwoody", "Brookhaven", "Marietta", "Smyrna", "Kennesaw",
-        "Acworth", "Woodstock", "Canton", "Cumming", "Duluth", "Lawrenceville",
-        "Suwanee", "Norcross", "Peachtree Corners", "Decatur", "Tucker",
-        "Stonecrest", "East Point", "College Park", "Union City", "Fairburn",
-        "Chamblee", "Doraville", "Lilburn", "Snellville", "Buford",
-        "Powder Springs", "Austell", "Mableton", "Holly Springs",
-        "Hapeville", "Palmetto", "Dacula", "Grayson", "Loganville",
+        "Milton", "East Point", "College Park", "Union City", "Fairburn",
+        "Hapeville", "Palmetto", "Chattahoochee Hills",
+        # Cobb
+        "Marietta", "Smyrna", "Kennesaw", "Acworth",
+        "Powder Springs", "Austell", "Mableton",
+        # Gwinnett
+        "Duluth", "Lawrenceville", "Suwanee", "Norcross",
+        "Peachtree Corners", "Lilburn", "Snellville", "Buford",
+        "Dacula", "Grayson", "Loganville",
+        # DeKalb
+        "Dunwoody", "Brookhaven", "Decatur", "Tucker",
+        "Stonecrest", "Chamblee", "Doraville", "Clarkston", "Lithonia",
+        # Cherokee
+        "Woodstock", "Canton", "Holly Springs", "Ball Ground",
+        # Forsyth
+        "Cumming", "Sugar Hill",
+        # Henry
+        "McDonough", "Stockbridge", "Hampton", "Locust Grove",
+        # Douglas
+        "Douglasville",
+        # Hall
+        "Gainesville", "Flowery Branch", "Oakwood",
+        # Fayette
+        "Fayetteville", "Peachtree City", "Tyrone",
+        # Coweta
+        "Newnan", "Senoia",
+        # Jackson
+        "Jefferson", "Hoschton", "Braselton",
+        # Walton
+        "Monroe", "Social Circle",
+        # Chatham
+        "Savannah", "Pooler", "Garden City", "Tybee Island",
     ]
 
     state_match = re.search(r'\b(GA|AL|TN|FL|SC|NC)\b\s*(\d{5})?', addr, re.IGNORECASE)

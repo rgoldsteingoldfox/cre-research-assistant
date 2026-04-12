@@ -57,6 +57,55 @@ for z in [
 ]:
     ZIP_TO_COUNTY[str(z)] = "Forsyth"
 
+# Henry County zips
+for z in [
+    30228, 30236, 30248, 30252, 30253, 30281,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Henry"
+
+# Douglas County zips
+for z in [
+    30122, 30134, 30135, 30154,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Douglas"
+
+# Hall County zips
+for z in [
+    30501, 30502, 30503, 30504, 30506, 30507, 30542, 30548,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Hall"
+
+# Fayette County zips
+for z in [
+    30214, 30215, 30269, 30270, 30290,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Fayette"
+
+# Coweta County zips
+for z in [
+    30263, 30265, 30276, 30277,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Coweta"
+
+# Jackson County zips
+for z in [
+    30549, 30553, 30548,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Jackson"
+
+# Walton County zips
+for z in [
+    30655, 30656, 30025,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Walton"
+
+# Chatham County zips
+for z in [
+    31401, 31402, 31404, 31405, 31406, 31407, 31408, 31409, 31410,
+    31411, 31412, 31414, 31415, 31416, 31419, 31420, 31421,
+]:
+    ZIP_TO_COUNTY[str(z)] = "Chatham"
+
 
 # County-specific property search - use Google to find the assessor record
 # Direct assessor URLs are unreliable (blocked, JS-rendered, broken deep links)
@@ -67,6 +116,14 @@ COUNTY_SEARCH_TEMPLATES = {
     "Gwinnett": "Gwinnett County GA tax assessor property",
     "Cherokee": "Cherokee County GA tax assessor property",
     "Forsyth": "Forsyth County GA tax assessor property",
+    "Henry": "Henry County GA tax assessor property",
+    "Douglas": "Douglas County GA tax assessor property",
+    "Hall": "Hall County GA tax assessor property",
+    "Fayette": "Fayette County GA tax assessor property",
+    "Coweta": "Coweta County GA tax assessor property",
+    "Jackson": "Jackson County GA tax assessor property",
+    "Walton": "Walton County GA tax assessor property",
+    "Chatham": "Chatham County GA tax assessor property",
 }
 
 # County-specific qPublic property search (free, no login required)
@@ -77,6 +134,14 @@ COUNTY_QPUBLIC_URLS = {
     "Gwinnett": "https://qpublic.schneidercorp.com/Application.aspx?App=GwinnettCountyGA&Layer=Parcels&PageType=Search",
     "Cherokee": "https://qpublic.schneidercorp.com/Application.aspx?App=CherokeeCountyGA&Layer=Parcels&PageType=Search",
     "Forsyth": "https://qpublic.schneidercorp.com/Application.aspx?App=ForsythCountyGA&Layer=Parcels&PageType=Search",
+    "Henry": "https://qpublic.schneidercorp.com/Application.aspx?App=HenryCountyGA&Layer=Parcels&PageType=Search",
+    "Douglas": "https://qpublic.schneidercorp.com/Application.aspx?App=DouglasCountyGA&Layer=Parcels&PageType=Search",
+    "Hall": "https://qpublic.schneidercorp.com/Application.aspx?App=HallCountyGA&Layer=Parcels&PageType=Search",
+    "Fayette": "https://qpublic.schneidercorp.com/Application.aspx?App=FayetteCountyGA&Layer=Parcels&PageType=Search",
+    "Coweta": "https://qpublic.schneidercorp.com/Application.aspx?App=CowetaCountyGA&Layer=Parcels&PageType=Search",
+    "Jackson": "https://qpublic.schneidercorp.com/Application.aspx?App=JacksonCountyGA&Layer=Parcels&PageType=Search",
+    "Walton": "https://qpublic.schneidercorp.com/Application.aspx?App=WaltonCountyGA&Layer=Parcels&PageType=Search",
+    "Chatham": "https://qpublic.schneidercorp.com/Application.aspx?App=ChathamCountyGA&Layer=Parcels&PageType=Search",
 }
 
 # City-to-Municode slug mapping (for municipal code / zoning ordinance lookups)
