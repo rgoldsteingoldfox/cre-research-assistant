@@ -104,8 +104,21 @@ st.markdown("""
 
 # === Header ===
 st.title("CRE Contact Finder")
-st.markdown("**Paste a property address. Get the person behind it — name, phone, email, LinkedIn.**")
-st.caption("Goes beyond CoStar: pierces LLCs, finds principals, and gets direct contact info.")
+st.divider()
+
+# === Mode Toggle ===
+search_mode = st.radio(
+    "What are you looking for?",
+    ["Owner Lookup", "Tenant Research"],
+    horizontal=True,
+    help="Owner Lookup finds the person behind the LLC. Tenant Research shows who's leasing at the property.",
+)
+
+if search_mode == "Owner Lookup":
+    st.markdown("**Find the person behind any commercial property — LLC principal, phone, email, LinkedIn.**")
+else:
+    st.markdown("**See every tenant and business at a property — names, phone numbers, business type.**")
+
 st.divider()
 
 
@@ -149,7 +162,8 @@ with col_upload:
 opt_col1, opt_col2 = st.columns([1, 3])
 with opt_col1:
     generate_reports = st.checkbox("Generate PDF reports", value=False)
-run_button = st.button("Find Contacts", type="primary", use_container_width=True)
+button_label = "Find Owner Contacts" if search_mode == "Owner Lookup" else "Find Tenants"
+run_button = st.button(button_label, type="primary", use_container_width=True)
 
 
 def _normalize_address(addr):
@@ -357,6 +371,7 @@ if run_button:
     # Store results in session state
     st.session_state["results"] = results
     st.session_state["generate_reports"] = generate_reports
+    st.session_state["search_mode"] = search_mode
 
     # === Auto-save results to disk ===
     results_dir = os.path.join(os.path.dirname(__file__), "results")
@@ -399,150 +414,232 @@ if run_button:
     st.success(f"Results auto-saved to `results/{timestamp}_research.csv`")
 
 
+def _render_property_details(r):
+    """Render property details and research links (shared by both modes)."""
+    detail_col1, detail_col2 = st.columns(2)
+
+    with detail_col1:
+        zoning = r.get("zoning", "")
+        zoning_uses = r.get("zoning_uses", "")
+        parcel = r.get("parcel_id", "")
+        mail_addr = r.get("owner_mail_address", "")
+        source = r.get("data_source", "")
+
+        if mail_addr:
+            st.markdown(f"**Tax Mailing:** {mail_addr}")
+        if zoning:
+            st.markdown(f"**Zoning:** {zoning}")
+        if zoning_uses:
+            st.markdown(f"{zoning_uses}")
+        if parcel:
+            st.markdown(f"**Parcel ID:** {parcel}")
+        if source:
+            st.markdown(f"**Data Source:** {source}")
+
+        if r.get("llc_principal_address") or r.get("llc_filing_status") or r.get("llc_background"):
+            st.markdown("---")
+            st.markdown("**LLC Details**")
+            if r.get("llc_principal_address"):
+                st.markdown(f"Principal Office: {r['llc_principal_address']}")
+            if r.get("llc_filing_status"):
+                st.markdown(f"Filing Status: {r['llc_filing_status']}")
+            if r.get("llc_background"):
+                st.markdown(f"Background: {r['llc_background']}")
+
+    with detail_col2:
+        st.markdown("**Research Links**")
+        links = []
+        if r.get("qpublic_link"):
+            links.append(f"- [qPublic (property records)]({r['qpublic_link']})")
+        if r.get("ga_sos_link"):
+            links.append(f"- [GA Secretary of State (LLC)]({r['ga_sos_link']})")
+        if r.get("gsccca_link"):
+            links.append(f"- [GSCCCA (deed search)]({r['gsccca_link']})")
+        if r.get("loopnet_link"):
+            links.append(f"- [LoopNet]({r['loopnet_link']})")
+        if r.get("assessor_link"):
+            links.append(f"- [County Assessor]({r['assessor_link']})")
+        if r.get("management_search"):
+            links.append(f"- [Google: owner contacts]({r['management_search']})")
+        if links:
+            st.markdown("\n".join(links))
+        else:
+            st.markdown("_No links available_")
+
+
 # === Display Results ===
 if "results" in st.session_state and st.session_state["results"]:
     results = st.session_state["results"]
+    mode = st.session_state.get("search_mode", "Owner Lookup")
 
     st.divider()
 
-    # Summary stats — owner contacts only (exclude tenants)
-    total = len(results)
-    contacts_found = sum(1 for r in results if any(not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
-    phones_found = sum(1 for r in results if any(c.get("phone") and not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
-    high_conf = sum(1 for r in results if any(c["confidence"] == "HIGH" and not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
+    if mode == "Tenant Research":
+        # === TENANT RESEARCH MODE ===
+        total = len(results)
+        total_tenants = sum(len([c for c in r.get("ranked_contacts", []) if c.get("is_tenant")]) for r in results)
+        total_businesses = sum(len([c for c in r.get("ranked_contacts", []) if c.get("is_tenant") and c.get("label") == "Business tenant"]) for r in results)
+        total_with_phone = sum(len([c for c in r.get("ranked_contacts", []) if c.get("is_tenant") and c.get("phone")]) for r in results)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Properties", total)
-    col2.metric("Contacts Found", contacts_found)
-    col3.metric("Phone Numbers", phones_found)
-    col4.metric("High Confidence", high_conf)
-
-    st.divider()
-
-    # === Results — Contact-First Layout ===
-    for r in results:
-        addr = r["address"]
-        owner = r.get("property_owner", "")
-        ranked = r.get("ranked_contacts", [])
-
-        # Header: address + owner
-        st.markdown(f"### {addr}")
-        if owner:
-            st.markdown(f"**Owner:** {owner}")
-
-        # Split contacts into owner contacts vs tenants
-        owner_contacts = [c for c in ranked if not c.get("is_tenant")]
-        tenant_contacts = [c for c in ranked if c.get("is_tenant")]
-
-        # === OWNER CONTACTS (hero section) ===
-        if owner_contacts:
-            for contact in owner_contacts:
-                conf = contact["confidence"]
-                if conf == "HIGH":
-                    badge = '<span class="badge-high">HIGH</span>'
-                    card_class = "contact-card contact-card-hit"
-                elif conf == "MEDIUM":
-                    badge = '<span class="badge-medium">MEDIUM</span>'
-                    card_class = "contact-card"
-                else:
-                    badge = '<span class="badge-low">LOW</span>'
-                    card_class = "contact-card"
-
-                details = []
-                if contact.get("phone"):
-                    details.append(f'<div class="contact-detail">Phone: <a href="tel:{contact["phone"]}">{contact["phone"]}</a></div>')
-                if contact.get("email"):
-                    details.append(f'<div class="contact-detail">Email: <a href="mailto:{contact["email"]}">{contact["email"]}</a></div>')
-                if contact.get("linkedin"):
-                    details.append(f'<div class="contact-detail">LinkedIn: <a href="{contact["linkedin"]}" target="_blank">{contact["linkedin"]}</a></div>')
-
-                # For entity cards (no person found), show what we know as next steps
-                if not details and contact.get("source") == "llc_filing":
-                    details.append('<div class="contact-detail" style="color:#6b7280;">No direct phone/email found — use the details above to research the entity</div>')
-
-                details_html = "\n".join(details) if details else '<div class="contact-detail" style="color:#9ca3af;">No direct contact info found</div>'
-
-                st.markdown(f"""
-                <div class="{card_class}">
-                    <div class="contact-name">{contact['name']} {badge}</div>
-                    <div class="contact-role">{contact['label']} — via {contact['source']}</div>
-                    {details_html}
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="contact-card">
-                <div class="contact-name" style="color:#9ca3af;">No owner contacts found</div>
-                <div class="contact-role">Try the research links below to search manually</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # === TENANTS (collapsed, separate section) ===
-        if tenant_contacts:
-            with st.expander(f"Tenants at this address ({len(tenant_contacts)})"):
-                for contact in tenant_contacts:
-                    details = []
-                    if contact.get("phone"):
-                        details.append(f'Phone: [{contact["phone"]}](tel:{contact["phone"]})')
-                    if contact.get("email"):
-                        details.append(f'Email: {contact["email"]}')
-                    detail_str = " | ".join(details) if details else "_No contact info_"
-                    st.markdown(f"- **{contact['name']}** — {contact['label']} — {detail_str}")
-
-        # === PROPERTY DETAILS (collapsed, secondary) ===
-        with st.expander("Property Details & Research Links"):
-            detail_col1, detail_col2 = st.columns(2)
-
-            with detail_col1:
-                zoning = r.get("zoning", "")
-                zoning_uses = r.get("zoning_uses", "")
-                parcel = r.get("parcel_id", "")
-                mail_addr = r.get("owner_mail_address", "")
-                source = r.get("data_source", "")
-
-                if mail_addr:
-                    st.markdown(f"**Tax Mailing:** {mail_addr}")
-                if zoning:
-                    st.markdown(f"**Zoning:** {zoning}")
-                if zoning_uses:
-                    st.markdown(f"{zoning_uses}")
-                if parcel:
-                    st.markdown(f"**Parcel ID:** {parcel}")
-                if source:
-                    st.markdown(f"**Data Source:** {source}")
-
-                # LLC filing details
-                if r.get("llc_principal_address") or r.get("llc_filing_status") or r.get("llc_background"):
-                    st.markdown("---")
-                    st.markdown("**LLC Details**")
-                    if r.get("llc_principal_address"):
-                        st.markdown(f"Principal Office: {r['llc_principal_address']}")
-                    if r.get("llc_filing_status"):
-                        st.markdown(f"Filing Status: {r['llc_filing_status']}")
-                    if r.get("llc_background"):
-                        st.markdown(f"Background: {r['llc_background']}")
-
-            with detail_col2:
-                st.markdown("**Research Links**")
-                links = []
-                if r.get("qpublic_link"):
-                    links.append(f"- [qPublic (property records)]({r['qpublic_link']})")
-                if r.get("ga_sos_link"):
-                    links.append(f"- [GA Secretary of State (LLC)]({r['ga_sos_link']})")
-                if r.get("gsccca_link"):
-                    links.append(f"- [GSCCCA (deed search)]({r['gsccca_link']})")
-                if r.get("loopnet_link"):
-                    links.append(f"- [LoopNet]({r['loopnet_link']})")
-                if r.get("assessor_link"):
-                    links.append(f"- [County Assessor]({r['assessor_link']})")
-                if r.get("management_search"):
-                    links.append(f"- [Google: owner contacts]({r['management_search']})")
-                if links:
-                    st.markdown("\n".join(links))
-                else:
-                    st.markdown("_No links available_")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Properties", total)
+        col2.metric("Total Tenants", total_tenants)
+        col3.metric("Businesses", total_businesses)
+        col4.metric("With Phone", total_with_phone)
 
         st.divider()
+
+        for r in results:
+            addr = r["address"]
+            owner = r.get("property_owner", "")
+            ranked = r.get("ranked_contacts", [])
+            tenant_contacts = [c for c in ranked if c.get("is_tenant")]
+            owner_contacts = [c for c in ranked if not c.get("is_tenant")]
+
+            st.markdown(f"### {addr}")
+            if owner:
+                st.caption(f"Owner: {owner}")
+
+            if tenant_contacts:
+                # Separate businesses from individuals
+                businesses = [c for c in tenant_contacts if c.get("label") == "Business tenant"]
+                individuals = [c for c in tenant_contacts if c.get("label") != "Business tenant"]
+
+                if businesses:
+                    st.markdown(f"**Businesses ({len(businesses)})**")
+                    for contact in businesses:
+                        details = []
+                        if contact.get("phone"):
+                            details.append(f'<div class="contact-detail">Phone: <a href="tel:{contact["phone"]}">{contact["phone"]}</a></div>')
+                        if contact.get("email"):
+                            details.append(f'<div class="contact-detail">Email: <a href="mailto:{contact["email"]}">{contact["email"]}</a></div>')
+                        details_html = "\n".join(details) if details else ""
+
+                        st.markdown(f"""
+                        <div class="contact-card">
+                            <div class="contact-name">{contact['name']}</div>
+                            {details_html}
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                if individuals:
+                    st.markdown(f"**Individual Tenants ({len(individuals)})**")
+                    for contact in individuals:
+                        details = []
+                        if contact.get("phone"):
+                            details.append(f'<a href="tel:{contact["phone"]}">{contact["phone"]}</a>')
+                        if contact.get("email"):
+                            details.append(f'<a href="mailto:{contact["email"]}">{contact["email"]}</a>')
+                        detail_str = " | ".join(details) if details else ""
+
+                        st.markdown(f"""
+                        <div class="contact-card">
+                            <div class="contact-name">{contact['name']}</div>
+                            <div class="contact-detail">{detail_str}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.markdown("_No tenants found at this address_")
+
+            # Owner info collapsed
+            if owner_contacts:
+                with st.expander("Owner Contacts"):
+                    for contact in owner_contacts:
+                        parts = [f"**{contact['name']}** — {contact['label']}"]
+                        if contact.get("phone"):
+                            parts.append(f"Phone: {contact['phone']}")
+                        if contact.get("email"):
+                            parts.append(f"Email: {contact['email']}")
+                        st.markdown(" | ".join(parts))
+
+            with st.expander("Property Details & Research Links"):
+                _render_property_details(r)
+
+            st.divider()
+
+    else:
+        # === OWNER LOOKUP MODE ===
+        total = len(results)
+        contacts_found = sum(1 for r in results if any(not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
+        phones_found = sum(1 for r in results if any(c.get("phone") and not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
+        high_conf = sum(1 for r in results if any(c["confidence"] == "HIGH" and not c.get("is_tenant") for c in r.get("ranked_contacts", [])))
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Properties", total)
+        col2.metric("Contacts Found", contacts_found)
+        col3.metric("Phone Numbers", phones_found)
+        col4.metric("High Confidence", high_conf)
+
+        st.divider()
+
+        for r in results:
+            addr = r["address"]
+            owner = r.get("property_owner", "")
+            ranked = r.get("ranked_contacts", [])
+
+            st.markdown(f"### {addr}")
+            if owner:
+                st.markdown(f"**Owner:** {owner}")
+
+            owner_contacts = [c for c in ranked if not c.get("is_tenant")]
+            tenant_contacts = [c for c in ranked if c.get("is_tenant")]
+
+            if owner_contacts:
+                for contact in owner_contacts:
+                    conf = contact["confidence"]
+                    if conf == "HIGH":
+                        badge = '<span class="badge-high">HIGH</span>'
+                        card_class = "contact-card contact-card-hit"
+                    elif conf == "MEDIUM":
+                        badge = '<span class="badge-medium">MEDIUM</span>'
+                        card_class = "contact-card"
+                    else:
+                        badge = '<span class="badge-low">LOW</span>'
+                        card_class = "contact-card"
+
+                    details = []
+                    if contact.get("phone"):
+                        details.append(f'<div class="contact-detail">Phone: <a href="tel:{contact["phone"]}">{contact["phone"]}</a></div>')
+                    if contact.get("email"):
+                        details.append(f'<div class="contact-detail">Email: <a href="mailto:{contact["email"]}">{contact["email"]}</a></div>')
+                    if contact.get("linkedin"):
+                        details.append(f'<div class="contact-detail">LinkedIn: <a href="{contact["linkedin"]}" target="_blank">{contact["linkedin"]}</a></div>')
+
+                    if not details and contact.get("source") == "llc_filing":
+                        details.append('<div class="contact-detail" style="color:#6b7280;">No direct phone/email found — use the details above to research the entity</div>')
+
+                    details_html = "\n".join(details) if details else '<div class="contact-detail" style="color:#9ca3af;">No direct contact info found</div>'
+
+                    st.markdown(f"""
+                    <div class="{card_class}">
+                        <div class="contact-name">{contact['name']} {badge}</div>
+                        <div class="contact-role">{contact['label']} — via {contact['source']}</div>
+                        {details_html}
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class="contact-card">
+                    <div class="contact-name" style="color:#9ca3af;">No owner contacts found</div>
+                    <div class="contact-role">Try the research links below to search manually</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if tenant_contacts:
+                with st.expander(f"Tenants at this address ({len(tenant_contacts)})"):
+                    for contact in tenant_contacts:
+                        details = []
+                        if contact.get("phone"):
+                            details.append(f'Phone: [{contact["phone"]}](tel:{contact["phone"]})')
+                        if contact.get("email"):
+                            details.append(f'Email: {contact["email"]}')
+                        detail_str = " | ".join(details) if details else "_No contact info_"
+                        st.markdown(f"- **{contact['name']}** — {contact['label']} — {detail_str}")
+
+            with st.expander("Property Details & Research Links"):
+                _render_property_details(r)
+
+            st.divider()
 
     # === Downloads ===
     st.subheader("Export")
@@ -620,11 +717,13 @@ if "results" in st.session_state and st.session_state["results"]:
 
 # === Sidebar ===
 with st.sidebar:
-    st.markdown("### What This Does")
+    st.markdown("### Two Modes")
     st.markdown(
-        "Paste a property address and get the **actual person** "
-        "behind the LLC — with their phone, email, and LinkedIn.\n\n"
-        "The part CoStar doesn't do."
+        "**Owner Lookup** — Find the person behind the LLC. "
+        "Pierces entity filings, finds principals, gets direct contact info. "
+        "The part CoStar doesn't do.\n\n"
+        "**Tenant Research** — See every business and tenant at a property. "
+        "Find who's leasing, who might be expanding, who to approach for nearby space."
     )
     st.divider()
     st.markdown("### How It Works")
@@ -632,8 +731,8 @@ with st.sidebar:
         "1. Looks up property owner (county GIS)\n"
         "2. Pierces the LLC (Secretary of State)\n"
         "3. Finds the principal's contact info\n"
-        "4. Reverse-looks up who's at the address\n"
-        "5. Ranks all contacts by confidence"
+        "4. Discovers all tenants at the address\n"
+        "5. Ranks contacts by confidence"
     )
     st.divider()
     st.markdown("### Search History")
